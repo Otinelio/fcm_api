@@ -10,3 +10,4 @@ Artisan::command('inspire', function () {
 
 Schedule::command('tokens:prune')->weekly();
 Schedule::command('notifications:birthdays')->dailyAt('08:00');
+Schedule::command('notifications:health-report')->dailyAt('08:00');

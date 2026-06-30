@@ -7,32 +7,50 @@ use Illuminate\Support\Facades\Hash;
 use App\Models\User;
 use App\Models\DeviceToken;
 use App\Models\NotificationLog;
+use App\Http\Controllers\LoyaltyController;
+use App\Http\Controllers\Api\RewardAckController;
 
 
-Route::post('/login', function (Request $request) {
-    $request->validate([
-        'email' => 'required|email',
-        'password' => 'required'
-    ]);
+// Customer routes are now protected below
 
-    $user = User::where('email', $request->email)->first();
+Route::middleware('auth:sanctum')->post(
+    '/rewards/{reward}/ack',
+    RewardAckController::class
+);
 
-    if (! $user || ! Hash::check($request->password, $user->password)) {
-        return response()->json(['message' => 'Identifiants incorrects.'], 401);
-    }
 
-    $token = $user->createToken('auth_token')->plainTextToken;
-
-    return response()->json([
-        'access_token' => $token,
-        'token_type' => 'Bearer',
-        'user' => $user
-    ]);
+Route::get('/ping', function () {
+    return response()->json(['status' => 'ok']);
 });
+
+Route::post('/login', [\App\Http\Controllers\AuthController::class, 'login']);
 
 Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
+
+// Profil utilisateur : nom + solde de points de fidélité
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/profile', function (Request $request) {
+        $user = $request->user();
+        return response()->json([
+            'id'             => $user->id,
+            'name'           => $user->name,
+            'email'          => $user->email,
+            'loyalty_points' => $user->loyalty_points ?? 0,
+        ]);
+    });
+
+    Route::get('/customers/{customer}', function (\App\Models\User $customer) {
+        return response()->json([
+            'customer_id' => $customer->id,
+            'loyalty_points' => $customer->loyalty_points,
+        ]);
+    });
+});
+
+// Route d'administration pour ajouter un point (non protégée pour les besoins du test)
+Route::post('/customers/{customer}/add-point', [LoyaltyController::class, 'addPoint']);
 
 Route::middleware('auth:sanctum')->post('/device-tokens', function (Request $request) {
     $request->validate(['token' => 'required|string']);
@@ -92,6 +110,42 @@ Route::middleware('auth:sanctum')->post('/simulate', function (Request $request)
             ['title' => 'Accès VIP 👑', 'body' => 'Soirée privée ce vendredi dans notre restaurant !'],
             ['type' => 'promo']
         );
+    } elseif ($request->type === 'login_confirmation') {
+        foreach ($user->deviceTokens as $deviceToken) {
+            \App\Jobs\SendPromoNotification::dispatch(
+                $user->id,
+                $deviceToken->token,
+                ['title' => 'Connexion réussie ✅', 'body' => 'Heureux de vous revoir !']
+            );
+        }
+    } elseif ($request->type === 'online_only') {
+        $fcm = app(\App\Services\Fcm\FcmService::class);
+        $fcm->sendToTopic(
+            'all_users',
+            [], // Empty notification array means it's a silent data message
+            ['type' => 'online_only', 'message' => 'Alerte in-app : Message pour tous les connectés !']
+        );
+    } elseif ($request->type === 'all_users') {
+        $fcm = app(\App\Services\Fcm\FcmService::class);
+        $fcm->sendToTopic(
+            'all_users',
+            ['title' => 'Mise à jour pour tous 📢', 'body' => 'Découvrez nos nouveautés !'],
+            ['type' => 'promo']
+        );
+    } elseif ($request->type === 'points_gt_10') {
+        \App\Models\User::where('loyalty_points', '>', 10)
+            ->whereHas('deviceTokens')
+            ->chunk(200, function ($users) {
+                foreach ($users as $u) {
+                    foreach ($u->deviceTokens as $deviceToken) {
+                        \App\Jobs\SendPromoNotification::dispatch(
+                            $u->id,
+                            $deviceToken->token,
+                            ['title' => 'Client Fidèle 🌟', 'body' => "Vos {$u->loyalty_points} points vous donnent droit à un cadeau !"]
+                        );
+                    }
+                }
+            });
     }
 
     return response()->json(['success' => true]);

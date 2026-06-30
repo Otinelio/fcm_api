@@ -17,7 +17,16 @@ class CheckRewardUnlock
     {
         if ($event->card->stamps >= $event->card->required_stamps) {
             $event->card->update(['reward_unlocked_at' => now()]);
-            event(new RewardUnlocked($event->card));
+            
+            // Création de la récompense
+            $reward = \App\Models\Reward::create([
+                'customer_id' => $event->card->user_id,
+                'title' => 'Cadeau de fidélité',
+                'description' => 'Bravo, tu as atteint ton palier de fidélité !',
+                'unlocked_at' => now(),
+            ]);
+
+            event(new RewardUnlocked($reward));
         }
     }
 }

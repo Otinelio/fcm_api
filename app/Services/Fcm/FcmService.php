@@ -32,28 +32,32 @@ class FcmService
             $data['type'] = $type;
         }
 
+        $message = [
+            'token' => $deviceToken,
+            'data' => $data,
+        ];
+
+        if (!empty($notification)) {
+            $message['notification'] = $notification;
+            $message['android'] = [
+                'priority' => 'high',
+                'notification' => [
+                    'sound' => 'default',
+                    'channel_id' => 'high_importance_channel'
+                ]
+            ];
+            $message['apns'] = [
+                'payload' => [
+                    'aps' => [
+                        'sound' => 'default'
+                    ]
+                ]
+            ];
+        }
+
         $response = Http::withToken($this->getAccessToken())
             ->post("https://fcm.googleapis.com/v1/projects/{$projectId}/messages:send", [
-                'message' => array_filter([
-                    'token' => $deviceToken,
-                    'notification' => $notification,
-                    'data' => $data,
-
-                    'android' => [
-                        'priority' => 'high',
-                        'notification' => [
-                            'sound' => 'default',
-                            'channel_id' => 'high_importance_channel'
-                        ]
-                    ],
-                    'apns' => [
-                        'payload' => [
-                            'aps' => [
-                                'sound' => 'default'
-                            ]
-                        ]
-                    ]
-                ]),
+                'message' => $message,
             ]);
 
         if ($response->successful()) {
@@ -83,28 +87,32 @@ class FcmService
     {
         $projectId = "restau-loyalty";
 
+        $message = [
+            'topic' => $topic,
+            'data' => $data,
+        ];
+
+        if (!empty($notification)) {
+            $message['notification'] = $notification;
+            $message['android'] = [
+                'priority' => 'high',
+                'notification' => [
+                    'sound' => 'default',
+                    'channel_id' => 'high_importance_channel'
+                ]
+            ];
+            $message['apns'] = [
+                'payload' => [
+                    'aps' => [
+                        'sound' => 'default'
+                    ]
+                ]
+            ];
+        }
+
         $response = Http::withToken($this->getAccessToken())
             ->post("https://fcm.googleapis.com/v1/projects/{$projectId}/messages:send", [
-                'message' => array_filter([
-                    'topic' => $topic,
-                    'notification' => $notification,
-                    'data' => $data,
-
-                    'android' => [
-                        'priority' => 'high',
-                        'notification' => [
-                            'sound' => 'default',
-                            'channel_id' => 'high_importance_channel'
-                        ]
-                    ],
-                    'apns' => [
-                        'payload' => [
-                            'aps' => [
-                                'sound' => 'default'
-                            ]
-                        ]
-                    ]
-                ]),
+                'message' => $message,
             ]);
 
         if ($response->successful()) {

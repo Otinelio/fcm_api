@@ -2,34 +2,40 @@
 
 namespace App\Events;
 
+use App\Models\Reward;
 use Illuminate\Broadcasting\Channel;
-use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PresenceChannel;
-use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
-use App\Models\LoyaltyCard;
-
-class RewardUnlocked
+class RewardUnlocked implements ShouldBroadcast
 {
-    use Dispatchable, InteractsWithSockets, SerializesModels;
+    use Dispatchable, SerializesModels;
 
-    public function __construct(public LoyaltyCard $card)
+    public function __construct(public Reward $reward)
     {
-        //
     }
 
-    /**
-     * Get the channels the event should broadcast on.
-     *
-     * @return array<int, Channel>
-     */
     public function broadcastOn(): array
     {
         return [
-            new PrivateChannel('channel-name'),
+            new PresenceChannel('customer.' . $this->reward->customer_id),
+        ];
+    }
+
+    public function broadcastAs(): string
+    {
+        return 'reward.unlocked';
+    }
+
+    public function broadcastWith(): array
+    {
+        return [
+            'reward_id' => $this->reward->id,
+            'title' => $this->reward->title,
+            'description' => $this->reward->description,
+            'unlocked_at' => $this->reward->unlocked_at->toIso8601String(),
         ];
     }
 }

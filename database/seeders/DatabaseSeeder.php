@@ -15,11 +15,14 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // User::factory(10)->create();
-
+        // Utilisateur de test principal avec un solde de points connu
         User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
+            'name'           => 'Test User',
+            'email'          => 'test@example.com',
+            'loyalty_points' => 350,
         ]);
+
+        // Quelques utilisateurs aléatoires pour peupler la base
+        User::factory(3)->create();
     }
 }
