@@ -23,14 +23,20 @@ Route::get('/ping', function () {
     return response()->json(['status' => 'ok']);
 });
 
+use App\Http\Controllers\FedaPayWebhookController;
+Route::post('/webhooks/fedapay', [FedaPayWebhookController::class, 'handle']);
+
 Route::post('/login', [\App\Http\Controllers\AuthController::class, 'login']);
 
 Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
 
+use App\Http\Controllers\PaymentController;
+
 // Profil utilisateur : nom + solde de points de fidélité
 Route::middleware('auth:sanctum')->group(function () {
+    Route::post('/subscriptions/{plan}/pay', [PaymentController::class, 'initSubscriptionPayment']);
     Route::get('/profile', function (Request $request) {
         $user = $request->user();
         return response()->json([
