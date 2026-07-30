@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('payment_transactions', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('restaurant_subscription_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('restaurant_subscription_id')->constrained('subscriptions')->cascadeOnDelete();
             $table->string('fedapay_transaction_id')->unique()->nullable();
             $table->string('fedapay_reference')->nullable();
             $table->unsignedInteger('amount_xof');
