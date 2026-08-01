@@ -9,15 +9,43 @@ use App\Models\DeviceToken;
 use App\Models\NotificationLog;
 use App\Http\Controllers\LoyaltyController;
 use App\Http\Controllers\Api\RewardAckController;
+use App\Http\Controllers\Api\ClientAuthController;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Auth routes (clients mobiles)
+// ─────────────────────────────────────────────────────────────────────────────
 
-// Customer routes are now protected below
+Route::prefix('auth')->group(function () {
+    // Routes publiques (pas de token nécessaire)
+    Route::post('/validate-register-step1', [ClientAuthController::class, 'validateRegisterStep1']);
+    Route::post('/register', [ClientAuthController::class, 'register']);
+    Route::post('/login',    [ClientAuthController::class, 'login']);
+    Route::post('/social',   [ClientAuthController::class, 'socialLogin']);
+    
+    // Password Recovery
+    Route::post('/forgot-password', [ClientAuthController::class, 'forgotPassword']);
+    Route::post('/verify-otp',      [ClientAuthController::class, 'verifyResetOtp']);
+    Route::post('/reset-password',  [ClientAuthController::class, 'resetPassword']);
+
+    // Routes protégées (token Sanctum requis)
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::get('/me',                       [ClientAuthController::class, 'me']);
+        Route::put('/profile',                  [ClientAuthController::class, 'updateProfile']);
+        Route::post('/social/complete-profile', [ClientAuthController::class, 'completeSocialProfile']);
+        Route::post('/verify-password',         [ClientAuthController::class, 'verifyPassword']);
+        Route::put('/change-password',          [ClientAuthController::class, 'changePassword']);
+        Route::post('/logout',                  [ClientAuthController::class, 'logout']);
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Autres routes existantes
+// ─────────────────────────────────────────────────────────────────────────────
 
 Route::middleware('auth:sanctum')->post(
     '/rewards/{reward}/ack',
     RewardAckController::class
 );
-
 
 Route::get('/ping', function () {
     return response()->json(['status' => 'ok']);
@@ -26,6 +54,7 @@ Route::get('/ping', function () {
 use App\Http\Controllers\FedaPayWebhookController;
 Route::post('/webhooks/fedapay', [FedaPayWebhookController::class, 'handle']);
 
+// Legacy login route (users table) — garder pour rétrocompatibilité
 Route::post('/login', [\App\Http\Controllers\AuthController::class, 'login']);
 
 Route::get('/user', function (Request $request) {

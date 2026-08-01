@@ -26,3 +26,6 @@ Homestead.json
 Homestead.yaml
 Thumbs.db
 /storage/app/firebase/firebase_credentials.json
+# Added by code-review-graph
+.code-review-graph/
+.claude/settings.local.json

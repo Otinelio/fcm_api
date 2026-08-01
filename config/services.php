@@ -35,7 +35,17 @@ return [
         ],
     ],
     'firebase' => [
+        'project_id' => env('FIREBASE_PROJECT_ID', ''),
         'credentials' => storage_path('app/firebase/firebase_credentials.json'),
+    ],
+
+    // ── OAuth Providers (validation de tokens côté serveur) ──────────
+    'google' => [
+        'client_id' => env('GOOGLE_CLIENT_ID'),
+    ],
+
+    'apple' => [
+        'client_id' => env('APPLE_CLIENT_ID'), // Bundle ID iOS
     ],
 
 ];

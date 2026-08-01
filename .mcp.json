@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "code-review-graph": {
+      "command": "/home/othnelio/.local/venvs/code-review-graph/bin/python3",
+      "args": [
+        "-m",
+        "code_review_graph",
+        "serve"
+      ],
+      "cwd": "/home/othnelio/fcm/restaurant-loyalty-api",
+      "type": "stdio"
+    }
+  }
+}
