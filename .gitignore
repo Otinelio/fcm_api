@@ -29,3 +29,4 @@ Thumbs.db
 # Added by code-review-graph
 .code-review-graph/
 .claude/settings.local.json
+/.worktrees/
