@@ -115,6 +115,36 @@ class ClientAvatarTest extends TestCase
         Storage::disk('public')->assertMissing("avatars/{$client->uuid}.png");
     }
 
+    public function test_reupload_with_same_extension_busts_cache_via_different_url(): void
+    {
+        Storage::fake('public');
+        $client = $this->makeClient();
+        Sanctum::actingAs($client);
+
+        // Le cache-busting repose sur now()->timestamp (précision à la seconde) :
+        // on avance explicitement l'horloge de test entre les deux requêtes pour
+        // ne pas dépendre de la vitesse d'exécution du test.
+        \Illuminate\Support\Carbon::setTestNow(\Illuminate\Support\Carbon::now());
+
+        $firstResponse = $this->postJson('/api/auth/profile/avatar', [
+            'avatar' => UploadedFile::fake()->image('avatar.jpg', 300, 300),
+        ]);
+        $firstResponse->assertOk();
+        $firstUrl = $firstResponse->json('client.avatar_url');
+
+        \Illuminate\Support\Carbon::setTestNow(\Illuminate\Support\Carbon::now()->addSecond());
+
+        $secondResponse = $this->postJson('/api/auth/profile/avatar', [
+            'avatar' => UploadedFile::fake()->image('avatar.jpg', 300, 300),
+        ]);
+        $secondResponse->assertOk();
+        $secondUrl = $secondResponse->json('client.avatar_url');
+
+        \Illuminate\Support\Carbon::setTestNow();
+
+        $this->assertNotSame($firstUrl, $secondUrl);
+    }
+
     public function test_deletes_avatar_and_resets_column(): void
     {
         Storage::fake('public');

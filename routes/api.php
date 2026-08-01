@@ -21,7 +21,7 @@ Route::prefix('auth')->group(function () {
     Route::post('/register', [ClientAuthController::class, 'register']);
     Route::post('/login',    [ClientAuthController::class, 'login']);
     Route::post('/social',   [ClientAuthController::class, 'socialLogin']);
-    
+
     // Password Recovery
     Route::post('/forgot-password', [ClientAuthController::class, 'forgotPassword']);
     Route::post('/verify-otp',      [ClientAuthController::class, 'verifyResetOtp']);
@@ -31,7 +31,7 @@ Route::prefix('auth')->group(function () {
     Route::middleware('auth:sanctum')->group(function () {
         Route::get('/me',                       [ClientAuthController::class, 'me']);
         Route::put('/profile',                  [ClientAuthController::class, 'updateProfile']);
-        Route::post('/profile/avatar',          [ClientAuthController::class, 'uploadAvatar']);
+        Route::post('/profile/avatar',          [ClientAuthController::class, 'uploadAvatar'])->middleware('throttle:10,1');
         Route::delete('/profile/avatar',        [ClientAuthController::class, 'deleteAvatar']);
         Route::post('/social/complete-profile', [ClientAuthController::class, 'completeSocialProfile']);
         Route::post('/verify-password',         [ClientAuthController::class, 'verifyPassword']);
@@ -128,7 +128,7 @@ Route::middleware('auth:sanctum')->post('/simulate', function (Request $request)
             ['user_id' => $user->id],
             ['stamps' => 4, 'required_stamps' => 5]
         );
-        
+
         // Simulate adding the 5th stamp
         $card->increment('stamps');
         event(new \App\Events\StampAdded($card));
@@ -136,7 +136,7 @@ Route::middleware('auth:sanctum')->post('/simulate', function (Request $request)
         // Manually trigger the birthday notification logic for this user
         // We set their birthday to today just for the simulation
         $user->update(['birthday' => now()->format('Y-m-d')]);
-        
+
         // Call the command manually
         \Illuminate\Support\Facades\Artisan::call('notifications:birthdays');
     } elseif ($request->type === 'vip') {

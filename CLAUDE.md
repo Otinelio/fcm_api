@@ -29,6 +29,8 @@ Tests run against in-memory SQLite (see `phpunit.xml`), not the Postgres dev dat
 
 `docker-compose.yml` provides Postgres (with **PostGIS**, for geo features like `client_restaurant_geo_optins`) and pgAdmin. Dev DB connection is `pgsql` (see `.env`, `DB_DATABASE=restaurant_loyalty`). Bring it up with `docker compose up -d` before running `artisan migrate` outside of tests.
 
+Run `php artisan storage:link` once per environment so files on the `public` disk (e.g. client avatars under `storage/app/public/avatars`) are actually served — without it, uploads succeed (200 response, valid `avatar_url`) but the URL 404s because `public/storage` isn't symlinked yet.
+
 Reverb runs as a separate process (started by `composer dev`) on `REVERB_SERVER_PORT` (default 8080); it must be running for presence-channel checks (`PresenceChecker`) and reward broadcasts to work locally.
 
 ## Architecture: two coexisting domains

@@ -34,7 +34,7 @@ class ClientAuthController extends Controller
 
     /**
      * POST /api/auth/validate-register-step1
-     * 
+     *
      * Valide les données de la première étape de l'inscription (nom, téléphone, date de naissance).
      */
     public function validateRegisterStep1(ValidateRegisterStep1Request $request): JsonResponse
@@ -283,14 +283,21 @@ class ClientAuthController extends Controller
         // Un ré-upload peut changer de format (png -> jpg) : on nettoie toute
         // ancienne extension avant d'écrire la nouvelle, sinon l'ancien fichier
         // reste orphelin sur le disque.
-        foreach (['jpg', 'jpeg', 'png', 'webp'] as $ext) {
-            Storage::disk('public')->delete("avatars/{$client->uuid}.{$ext}");
-        }
+        $this->purgeAvatarFiles($client);
 
         $extension = $request->file('avatar')->extension();
         $path = $request->file('avatar')->storeAs('avatars', "{$client->uuid}.{$extension}", 'public');
 
-        $client->update(['avatar_url' => asset(Storage::url($path))]);
+        if ($path === false) {
+            return response()->json([
+                'message' => 'Échec de l\'enregistrement de la photo. Réessayez.',
+            ], 500);
+        }
+
+        // Le chemin est déterministe (avatars/{uuid}.{ext}) : un ré-upload avec la même
+        // extension produirait la même URL, ce qui ferait servir l'image en cache côté
+        // client (Image.network / CDN). On ajoute un paramètre de cache-busting.
+        $client->update(['avatar_url' => asset(Storage::url($path)) . '?v=' . now()->timestamp]);
 
         return response()->json([
             'message' => 'Photo de profil mise à jour.',
@@ -308,15 +315,24 @@ class ClientAuthController extends Controller
         /** @var Client $client */
         $client = $request->user();
 
-        foreach (['jpg', 'jpeg', 'png', 'webp'] as $ext) {
-            Storage::disk('public')->delete("avatars/{$client->uuid}.{$ext}");
-        }
+        $this->purgeAvatarFiles($client);
         $client->update(['avatar_url' => null]);
 
         return response()->json([
             'message' => 'Photo de profil supprimée.',
             'client'  => $this->clientData($client->fresh()),
         ]);
+    }
+
+    /**
+     * Supprime tous les fichiers avatar connus pour ce client, toutes extensions
+     * confondues (utilisé avant un ré-upload et lors de la suppression).
+     */
+    private function purgeAvatarFiles(Client $client): void
+    {
+        foreach (['jpg', 'jpeg', 'png', 'webp'] as $ext) {
+            Storage::disk('public')->delete("avatars/{$client->uuid}.{$ext}");
+        }
     }
 
     // ─────────────────────────────────────────────────────────
@@ -387,14 +403,14 @@ class ClientAuthController extends Controller
     {
         $identifier = $request->phone ?? $request->email;
         $otp = (string) random_int(100000, 999999);
-        
+
         Cache::put('otp_reset_' . $identifier, $otp, now()->addMinutes(10));
-        
+
         // Simuler l'envoi pour les tests locaux (vu qu'on n'a pas de SMS Gateway)
         Log::info("Code OTP de réinitialisation pour {$identifier} : {$otp}");
-        
+
         $response = ['message' => 'Un code de réinitialisation a été envoyé.'];
-        
+
         // En mode debug, on renvoie l'OTP dans la réponse pour faciliter les tests
         if (config('app.debug')) {
             $response['debug_otp'] = $otp;
@@ -417,7 +433,7 @@ class ClientAuthController extends Controller
         // OTP valide, on génère un token de réinitialisation
         $resetToken = (string) Str::uuid();
         Cache::put('reset_token_' . $identifier, $resetToken, now()->addMinutes(15));
-        
+
         // On supprime l'OTP utilisé
         Cache::forget('otp_reset_' . $identifier);
 
@@ -440,7 +456,7 @@ class ClientAuthController extends Controller
 
         // Trouver le client
         $client = Client::where(isset($request->phone) ? 'phone' : 'email', $identifier)->firstOrFail();
-        
+
         // Mettre à jour le mot de passe
         $client->update([
             'password' => Hash::make($request->password),
