@@ -8,6 +8,7 @@ use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\RegisterRequest;
 use App\Http\Requests\Auth\SocialLoginRequest;
 use App\Http\Requests\Auth\UpdateProfileRequest;
+use App\Http\Requests\Auth\UpdateAvatarRequest;
 use App\Models\Client;
 use App\Services\Auth\SocialAuthService;
 use App\Http\Requests\Auth\ForgotPasswordRequest;
@@ -18,6 +19,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class ClientAuthController extends Controller
@@ -260,6 +262,59 @@ class ClientAuthController extends Controller
 
         return response()->json([
             'message' => 'Profil mis à jour.',
+            'client'  => $this->clientData($client->fresh()),
+        ]);
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // Avatar
+    // ─────────────────────────────────────────────────────────
+
+    /**
+     * POST /api/auth/profile/avatar
+     *
+     * Upload (ou remplace) la photo de profil du client.
+     */
+    public function uploadAvatar(UpdateAvatarRequest $request): JsonResponse
+    {
+        /** @var Client $client */
+        $client = $request->user();
+
+        // Un ré-upload peut changer de format (png -> jpg) : on nettoie toute
+        // ancienne extension avant d'écrire la nouvelle, sinon l'ancien fichier
+        // reste orphelin sur le disque.
+        foreach (['jpg', 'jpeg', 'png', 'webp'] as $ext) {
+            Storage::disk('public')->delete("avatars/{$client->uuid}.{$ext}");
+        }
+
+        $extension = $request->file('avatar')->extension();
+        $path = $request->file('avatar')->storeAs('avatars', "{$client->uuid}.{$extension}", 'public');
+
+        $client->update(['avatar_url' => asset(Storage::url($path))]);
+
+        return response()->json([
+            'message' => 'Photo de profil mise à jour.',
+            'client'  => $this->clientData($client->fresh()),
+        ]);
+    }
+
+    /**
+     * DELETE /api/auth/profile/avatar
+     *
+     * Supprime la photo de profil du client (retour à l'avatar par défaut).
+     */
+    public function deleteAvatar(\Illuminate\Http\Request $request): JsonResponse
+    {
+        /** @var Client $client */
+        $client = $request->user();
+
+        foreach (['jpg', 'jpeg', 'png', 'webp'] as $ext) {
+            Storage::disk('public')->delete("avatars/{$client->uuid}.{$ext}");
+        }
+        $client->update(['avatar_url' => null]);
+
+        return response()->json([
+            'message' => 'Photo de profil supprimée.',
             'client'  => $this->clientData($client->fresh()),
         ]);
     }

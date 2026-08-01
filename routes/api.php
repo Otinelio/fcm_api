@@ -31,6 +31,8 @@ Route::prefix('auth')->group(function () {
     Route::middleware('auth:sanctum')->group(function () {
         Route::get('/me',                       [ClientAuthController::class, 'me']);
         Route::put('/profile',                  [ClientAuthController::class, 'updateProfile']);
+        Route::post('/profile/avatar',          [ClientAuthController::class, 'uploadAvatar']);
+        Route::delete('/profile/avatar',        [ClientAuthController::class, 'deleteAvatar']);
         Route::post('/social/complete-profile', [ClientAuthController::class, 'completeSocialProfile']);
         Route::post('/verify-password',         [ClientAuthController::class, 'verifyPassword']);
         Route::put('/change-password',          [ClientAuthController::class, 'changePassword']);
