@@ -35,20 +35,43 @@ class SocialAuthService
         $verifier = IdTokenVerifier::createWithProjectId($projectId);
 
         try {
-            $token = $verifier->verifyIdToken($idToken);
+            // La tolérance d'horloge évite les rejets « token used too early »
+            // quand l'horloge du serveur dérive de quelques secondes.
+            $token = $verifier->verifyIdTokenWithLeeway(
+                $idToken,
+                (int) config('services.firebase.leeway', 60),
+            );
             $payload = $token->payload();
-
-            return [
-                'sub'         => $payload['sub'], // C'est l'UID Firebase de l'utilisateur
-                'email'       => $payload['email'] ?? null,
-                'name'        => $payload['name'] ?? null,
-                'given_name'  => $payload['name'] ?? null, // Firebase JWT regroupe souvent nom/prénom dans 'name'
-                'family_name' => null,
-                'picture'     => $payload['picture'] ?? null,
-            ];
         } catch (IdTokenVerificationFailed $e) {
             throw new InvalidArgumentException('Token Firebase invalide ou expiré : ' . $e->getMessage());
         }
+
+        if (empty($payload['sub'])) {
+            throw new InvalidArgumentException('Token Firebase sans identifiant utilisateur (sub).');
+        }
+
+        // Firebase place le nom complet dans `name`. Google renseigne en plus
+        // `given_name`/`family_name` dans `firebase.identities`, mais pas
+        // toujours : on découpe `name` en dernier recours pour ne pas créer un
+        // client dont le prénom contient le nom entier.
+        $fullName   = $payload['name'] ?? null;
+        $givenName  = $payload['given_name'] ?? null;
+        $familyName = $payload['family_name'] ?? null;
+
+        if ($givenName === null && $fullName !== null) {
+            $parts      = preg_split('/\s+/', trim($fullName), 2);
+            $givenName  = $parts[0] ?? null;
+            $familyName = $familyName ?? ($parts[1] ?? null);
+        }
+
+        return [
+            'sub'         => $payload['sub'], // C'est l'UID Firebase de l'utilisateur
+            'email'       => $payload['email'] ?? null,
+            'name'        => $fullName,
+            'given_name'  => $givenName,
+            'family_name' => $familyName,
+            'picture'     => $payload['picture'] ?? null,
+        ];
     }
 
     // ─────────────────────────────────────────────────────────
@@ -77,9 +100,18 @@ class SocialAuthService
             return $response->json();
         });
 
+        $expectedAudience = config('services.apple.client_id');
+
+        if (empty($expectedAudience)) {
+            throw new \RuntimeException('Erreur serveur : APPLE_CLIENT_ID non configuré.');
+        }
+
         try {
             // Décoder le JWT avec les clés publiques Apple
             $keys = JWK::parseKeySet($jwks, 'RS256');
+
+            // Même tolérance d'horloge que pour Firebase.
+            JWT::$leeway = (int) config('services.firebase.leeway', 60);
             $decoded = JWT::decode($idToken, $keys);
 
             // Vérifier l'issuer et l'audience
@@ -87,8 +119,10 @@ class SocialAuthService
                 throw new InvalidArgumentException('Issuer Apple invalide.');
             }
 
-            $expectedAudience = config('services.apple.client_id');
-            if ($decoded->aud !== $expectedAudience) {
+            // `aud` est une chaîne pour le flux natif, mais Apple peut renvoyer
+            // un tableau ; comparer directement rejetterait un jeton valide.
+            $audiences = is_array($decoded->aud) ? $decoded->aud : [$decoded->aud];
+            if (! in_array($expectedAudience, $audiences, true)) {
                 throw new InvalidArgumentException('Audience Apple invalide.');
             }
 
@@ -137,19 +171,15 @@ class SocialAuthService
             return ['client' => $client, 'is_new' => false];
         }
 
-        // 2. Si email fourni, chercher par email (compte existant à lier)
+        // 2. Si un compte existe déjà avec cet email, la méthode d'authentification
+        // de ce compte reste inchangée : on ne lie jamais silencieusement une
+        // identité OAuth à un compte trouvé par email (voir Client::authMethodDeniedMessage
+        // — la méthode associée au compte est la seule source de vérité).
         if ($email) {
-            $client = Client::where('email', $email)->first();
+            $existing = Client::where('email', $email)->first();
 
-            if ($client) {
-                // Lier le compte OAuth au client existant
-                $client->update([
-                    'oauth_provider' => $provider,
-                    'oauth_id'       => $oauthId,
-                    'avatar_url'     => $client->avatar_url ?? $avatarUrl,
-                ]);
-
-                return ['client' => $client, 'is_new' => false];
+            if ($existing) {
+                throw new \InvalidArgumentException($existing->authMethodDeniedMessage());
             }
         }
 
