@@ -262,4 +262,48 @@ class AuditScenariosTest extends TestCase
             'message' => 'La session de réinitialisation a expiré. Veuillez recommencer.',
         ]);
     }
+
+    // ── /register est maintenant limité en débit ────────────────────────────
+
+    public function test_register_is_rate_limited_after_five_attempts_per_minute(): void
+    {
+        for ($i = 0; $i < 5; $i++) {
+            $this->postJson('/api/auth/register', [
+                'first_name'            => 'Spammer',
+                'phone'                 => '+2289100001' . $i,
+                'password'              => 'password123',
+                'password_confirmation' => 'password123',
+            ]);
+        }
+
+        $response = $this->postJson('/api/auth/register', [
+            'first_name'            => 'Spammer',
+            'phone'                 => '+22891000019',
+            'password'              => 'password123',
+            'password_confirmation' => 'password123',
+        ]);
+
+        $response->assertStatus(429);
+    }
+
+    // ── change-password refuse de remettre le même mot de passe ────────────
+
+    public function test_change_password_rejects_reusing_the_same_password(): void
+    {
+        $client = $this->classicClient(['phone' => '+22891000020', 'password' => bcrypt('samepass123')]);
+        $token = $client->createToken('t')->plainTextToken;
+
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->putJson('/api/auth/change-password', [
+                'current_password'      => 'samepass123',
+                'password'              => 'samepass123',
+                'password_confirmation' => 'samepass123',
+            ]);
+
+        $response->assertStatus(422);
+        $response->assertJson([
+            'message' => 'Le nouveau mot de passe doit être différent de l\'actuel.',
+        ]);
+        $this->assertTrue(Hash::check('samepass123', $client->fresh()->password));
+    }
 }

@@ -554,6 +554,12 @@ class ClientAuthController extends Controller
             ], 422);
         }
 
+        if (Hash::check($request->password, $client->password)) {
+            return response()->json([
+                'message' => 'Le nouveau mot de passe doit être différent de l\'actuel.',
+            ], 422);
+        }
+
         $client->update([
             'password' => Hash::make($request->password),
         ]);

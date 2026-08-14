@@ -17,8 +17,8 @@ use App\Http\Controllers\Api\ClientAuthController;
 
 Route::prefix('auth')->group(function () {
     // Routes publiques (pas de token nécessaire)
-    Route::post('/validate-register-step1', [ClientAuthController::class, 'validateRegisterStep1']);
-    Route::post('/register', [ClientAuthController::class, 'register']);
+    Route::post('/validate-register-step1', [ClientAuthController::class, 'validateRegisterStep1'])->middleware('throttle:5,1');
+    Route::post('/register', [ClientAuthController::class, 'register'])->middleware('throttle:5,1');
     Route::post('/login',    [ClientAuthController::class, 'login']);
     Route::post('/social',   [ClientAuthController::class, 'socialLogin']);
 
