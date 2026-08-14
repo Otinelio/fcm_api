@@ -410,6 +410,15 @@ class ClientAuthController extends Controller
     public function forgotPassword(ForgotPasswordRequest $request): JsonResponse
     {
         $identifier = $request->phone ?? $request->email;
+
+        $client = Client::where(isset($request->phone) ? 'phone' : 'email', $identifier)->first();
+
+        if ($client && $client->isOAuthUser()) {
+            return response()->json([
+                'message' => $client->authMethodDeniedMessage(),
+            ], 403);
+        }
+
         $otp = (string) random_int(100000, 999999);
 
         Cache::put('otp_reset_' . $identifier, $otp, now()->addMinutes(10));
@@ -464,6 +473,12 @@ class ClientAuthController extends Controller
 
         // Trouver le client
         $client = Client::where(isset($request->phone) ? 'phone' : 'email', $identifier)->firstOrFail();
+
+        if ($client->isOAuthUser()) {
+            return response()->json([
+                'message' => $client->authMethodDeniedMessage(),
+            ], 403);
+        }
 
         // Mettre à jour le mot de passe
         $client->update([
