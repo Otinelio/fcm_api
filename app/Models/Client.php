@@ -72,6 +72,22 @@ class Client extends Authenticatable
     }
 
     /**
+     * Message affiché quand une action est refusée parce que ce compte
+     * utilise une autre méthode d'authentification. `oauth_provider` reste
+     * la seule source de vérité (jamais l'email ou le téléphone).
+     */
+    public function authMethodDeniedMessage(): string
+    {
+        if ($this->isOAuthUser()) {
+            $provider = ucfirst((string) $this->oauth_provider);
+
+            return "Ce compte utilise une connexion {$provider}. Connectez-vous avec {$provider} pour accéder à votre compte.";
+        }
+
+        return 'Un compte existe déjà avec cet e-mail et utilise un mot de passe. Connectez-vous avec votre mot de passe.';
+    }
+
+    /**
      * Nom complet du client.
      */
     public function getFullNameAttribute(): string
