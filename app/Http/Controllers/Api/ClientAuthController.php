@@ -108,6 +108,14 @@ class ClientAuthController extends Controller
             ], 401);
         }
 
+        if ($client->isOAuthUser()) {
+            $request->hitRateLimiter();
+
+            return response()->json([
+                'message' => $client->authMethodDeniedMessage(),
+            ], 403);
+        }
+
         if (! Hash::check($request->password, $client->password)) {
             $request->hitRateLimiter();
 
