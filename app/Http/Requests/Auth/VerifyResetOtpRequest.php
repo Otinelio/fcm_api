@@ -3,12 +3,24 @@
 namespace App\Http\Requests\Auth;
 
 use Illuminate\Foundation\Http\FormRequest;
+use App\Services\Phone\PhoneParser;
 
 class VerifyResetOtpRequest extends FormRequest
 {
     public function authorize(): bool
     {
         return true;
+    }
+
+    protected function prepareForValidation()
+    {
+        if ($this->has('phone') && !empty($this->phone)) {
+            $parser = app(PhoneParser::class);
+            $normalized = $parser->normalize($this->phone);
+            if ($normalized) {
+                $this->merge(['phone' => $normalized]);
+            }
+        }
     }
 
     public function rules(): array

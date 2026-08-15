@@ -35,8 +35,23 @@ return [
         ],
     ],
     'firebase' => [
+        // Doit être le projet Firebase qui a émis les id_token de l'app mobile
+        // (celui de son google-services.json). Un projet différent ici et le
+        // jeton est rejeté avec « Token Firebase invalide ».
         'project_id' => env('FIREBASE_PROJECT_ID', ''),
-        'credentials' => storage_path('app/firebase/firebase_credentials.json'),
+
+        // Chemin du compte de service (FCM). Relatif => résolu depuis la racine
+        // du projet, ce qui rend FIREBASE_CREDENTIALS utilisable tel quel.
+        'credentials' => (function () {
+            $path = env('FIREBASE_CREDENTIALS', 'storage/app/firebase/service-account.json');
+
+            return str_starts_with($path, '/') ? $path : base_path($path);
+        })(),
+
+        // Tolérance d'horloge à la vérification des id_token. Un serveur qui
+        // dérive de quelques secondes rejetterait sinon des jetons valides
+        // avec « token used too early ».
+        'leeway' => (int) env('FIREBASE_TOKEN_LEEWAY', 60),
     ],
 
     // ── OAuth Providers (validation de tokens côté serveur) ──────────

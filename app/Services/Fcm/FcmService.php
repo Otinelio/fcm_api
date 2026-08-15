@@ -14,8 +14,12 @@ class FcmService
         // On met le token en cache pour ne pas en régénérer un à chaque envoi
         // (il est valide ~1h, FCM/Google rate-limite la génération de tokens)
         return Cache::remember('fcm_access_token', 3500, function () {
+            $credentials = config('services.firebase.credentials');
+
+            $this->assertCredentialsMatchProject($credentials);
+
             $client = new GoogleClient();
-            $client->setAuthConfig(storage_path('app/firebase/service-account.json'));
+            $client->setAuthConfig($credentials);
             $client->addScope('https://www.googleapis.com/auth/firebase.messaging');
 
             $token = $client->fetchAccessTokenWithAssertion();
@@ -23,9 +27,37 @@ class FcmService
         });
     }
 
+    /**
+     * Le compte de service et l'endpoint FCM doivent viser le même projet.
+     *
+     * Sans ce contrôle, un compte de service appartenant à un autre projet
+     * produit un jeton parfaitement valide, et l'échec n'apparaît qu'à l'envoi
+     * sous la forme d'un « FCM send failed » avec un 403 sans explication.
+     */
+    private function assertCredentialsMatchProject(string $credentials): void
+    {
+        if (! is_file($credentials)) {
+            throw new \RuntimeException(
+                "Compte de service Firebase introuvable : {$credentials}. "
+                . 'Le générer depuis Paramètres du projet > Comptes de service.'
+            );
+        }
+
+        $accountProject = json_decode((string) file_get_contents($credentials), true)['project_id'] ?? null;
+        $expectedProject = config('services.firebase.project_id');
+
+        if ($accountProject !== null && $expectedProject && $accountProject !== $expectedProject) {
+            throw new \RuntimeException(
+                "Le compte de service appartient au projet « {$accountProject} » alors que "
+                . "FIREBASE_PROJECT_ID vaut « {$expectedProject} ». Générer une nouvelle clé "
+                . "privée depuis le projet « {$expectedProject} » et remplacer {$credentials}."
+            );
+        }
+    }
+
     public function sendToToken(string $deviceToken, array $notification, array $data = [], ?int $userId = null, string $type = 'promo'): bool
     {
-        $projectId = "restau-loyalty";
+        $projectId = config('services.firebase.project_id');
 
         // S'assurer que le type est bien présent dans la payload data pour le routage Flutter
         if (!isset($data['type'])) {
@@ -85,7 +117,7 @@ class FcmService
 
     public function sendToTopic(string $topic, array $notification, array $data = []): bool
     {
-        $projectId = "restau-loyalty";
+        $projectId = config('services.firebase.project_id');
 
         $message = [
             'topic' => $topic,

@@ -32,6 +32,14 @@ class PhoneParser
     public function normalize(string $phoneNumber, ?string $defaultCountry = null): ?string
     {
         $parsed = $this->parse($phoneNumber, $defaultCountry);
-        return $parsed ? $parsed->formatE164() : null;
+        if (!$parsed) {
+            return null;
+        }
+
+        try {
+            return $parsed->formatE164();
+        } catch (NumberParseException $e) {
+            return null;
+        }
     }
 }

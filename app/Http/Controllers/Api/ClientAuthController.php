@@ -388,6 +388,9 @@ class ClientAuthController extends Controller
             'referral_code'  => $client->referral_code,
             'oauth_provider' => $client->oauth_provider,
             'is_profile_complete' => $client->isProfileComplete(),
+            // Date d'inscription — alimente le "Membre depuis" du profil côté
+            // mobile, qui retombait sinon sur la date du jour à chaque appel.
+            'created_at'     => $client->created_at?->toIso8601String(),
         ];
     }
 
