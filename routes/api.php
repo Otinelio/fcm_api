@@ -10,6 +10,9 @@ use App\Models\NotificationLog;
 use App\Http\Controllers\LoyaltyController;
 use App\Http\Controllers\Api\RewardAckController;
 use App\Http\Controllers\Api\ClientAuthController;
+use App\Http\Controllers\Api\RestaurantAuthController;
+use App\Http\Controllers\Api\LoyaltyProgramController;
+use App\Http\Controllers\Api\LoyaltyCardController;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Auth routes (clients mobiles)
@@ -38,6 +41,37 @@ Route::prefix('auth')->group(function () {
         Route::put('/change-password',          [ClientAuthController::class, 'changePassword']);
         Route::post('/logout',                  [ClientAuthController::class, 'logout']);
     });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Auth routes (marchands / établissements) — scope : inscription + connexion
+// ─────────────────────────────────────────────────────────────────────────────
+
+Route::prefix('auth/merchant')->group(function () {
+    // Routes publiques
+    Route::post('/register', [RestaurantAuthController::class, 'register'])->middleware('throttle:5,1');
+    Route::post('/login',    [RestaurantAuthController::class, 'login'])->middleware('throttle:5,1');
+    Route::post('/social',   [RestaurantAuthController::class, 'socialLogin']);
+
+    // Password Recovery
+    Route::post('/forgot-password', [RestaurantAuthController::class, 'forgotPassword']);
+    Route::post('/verify-otp',      [RestaurantAuthController::class, 'verifyResetOtp']);
+    Route::post('/reset-password',  [RestaurantAuthController::class, 'resetPassword']);
+
+    // Routes protégées (token Sanctum requis)
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::get('/me',        [RestaurantAuthController::class, 'me']);
+        Route::put('/profile',   [RestaurantAuthController::class, 'updateBusinessInfo']);
+        Route::post('/logout',   [RestaurantAuthController::class, 'logout']);
+    });
+});
+
+// Programme de fidélité (step2/3 de l'onboarding marchand)
+Route::middleware('auth:sanctum')->post('/loyalty-programs', [LoyaltyProgramController::class, 'store']);
+
+Route::middleware('auth:sanctum')->prefix('loyalty-cards')->group(function () {
+    Route::post('/join', [LoyaltyCardController::class, 'join']);
+    Route::get('/{loyaltyCard}', [LoyaltyCardController::class, 'show']);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -122,16 +156,6 @@ Route::middleware('auth:sanctum')->post('/simulate', function (Request $request)
                 ['title' => 'SUPER PROMO 💥', 'body' => 'Moins 50% sur votre commande !']
             );
         }
-    } elseif ($request->type === 'reward') {
-        // Find or create a mock loyalty card for the user
-        $card = \App\Models\LoyaltyCard::firstOrCreate(
-            ['user_id' => $user->id],
-            ['stamps' => 4, 'required_stamps' => 5]
-        );
-
-        // Simulate adding the 5th stamp
-        $card->increment('stamps');
-        event(new \App\Events\StampAdded($card));
     } elseif ($request->type === 'birthday') {
         // Manually trigger the birthday notification logic for this user
         // We set their birthday to today just for the simulation

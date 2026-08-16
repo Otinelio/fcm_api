@@ -28,6 +28,7 @@ class CompleteSocialProfileRequest extends FormRequest
     {
         return [
             'first_name' => ['required', 'string', 'max:100'],
+            'last_name'  => ['sometimes', 'nullable', 'string', 'max:100'],
             'phone'      => ['required', 'string', 'phone:AUTO,INTERNATIONAL', 'unique:clients,phone,' . $this->user()?->id],
             'birthdate'  => ['nullable', 'date', 'before:today'],
             'city'       => ['nullable', 'string', 'max:100'],

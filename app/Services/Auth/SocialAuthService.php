@@ -3,6 +3,7 @@
 namespace App\Services\Auth;
 
 use App\Models\Client;
+use App\Models\Restaurant;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
@@ -201,6 +202,57 @@ class SocialAuthService
         ]);
 
         return ['client' => $client, 'is_new' => true];
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // Find or Create Restaurant (marchand)
+    // ─────────────────────────────────────────────────────────
+
+    /**
+     * Cherche un restaurant existant par OAuth ID ou email, ou en crée un nouveau.
+     *
+     * Contrairement à [findOrCreateClient], on ne renseigne pas `name` depuis le
+     * profil Google/Apple : c'est le nom du commerce (pas de la personne), il
+     * reste à saisir au step1 comme pour l'inscription email+password.
+     *
+     * @return array{restaurant: Restaurant, is_new: bool}
+     */
+    public function findOrCreateRestaurant(
+        string $provider,
+        string $oauthId,
+        ?string $email = null,
+        bool $allowCreation = true,
+    ): array {
+        $restaurant = Restaurant::where('oauth_provider', $provider)
+            ->where('oauth_id', $oauthId)
+            ->first();
+
+        if ($restaurant) {
+            return ['restaurant' => $restaurant, 'is_new' => false];
+        }
+
+        // Un compte trouvé par email garde sa méthode d'authentification
+        // d'origine : jamais de liaison silencieuse à une identité OAuth.
+        if ($email) {
+            $existing = Restaurant::where('email', $email)->first();
+
+            if ($existing) {
+                throw new \InvalidArgumentException($existing->authMethodDeniedMessage());
+            }
+        }
+
+        if (!$allowCreation) {
+            throw new \InvalidArgumentException('Aucun compte n\'est associé à cette adresse email.');
+        }
+
+        $restaurant = Restaurant::create([
+            'email'          => $email,
+            'password'       => null, // Comptes OAuth : pas de mot de passe
+            'oauth_provider' => $provider,
+            'oauth_id'       => $oauthId,
+        ]);
+
+        return ['restaurant' => $restaurant, 'is_new' => true];
     }
 
     // ─────────────────────────────────────────────────────────

@@ -72,6 +72,11 @@ return [
             'model'  => \App\Models\Client::class,
         ],
 
+        'restaurants' => [
+            'driver' => 'eloquent',
+            'model'  => \App\Models\Restaurant::class,
+        ],
+
         // 'users' => [
         //     'driver' => 'database',
         //     'table' => 'users',

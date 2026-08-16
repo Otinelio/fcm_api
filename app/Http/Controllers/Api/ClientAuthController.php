@@ -217,6 +217,7 @@ class ClientAuthController extends Controller
 
         $data = [
             'first_name'    => $request->first_name,
+            'last_name'     => $request->last_name,
             'phone'         => $request->phone,
             'birthdate'     => $request->birthdate,
             'referral_code' => $client->referral_code ?? $this->generateReferralCode(),
