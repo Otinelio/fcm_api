@@ -3,7 +3,7 @@
 use Illuminate\Support\Facades\Broadcast;
 
 Broadcast::channel('loyalty.{customerId}', function ($user, $customerId) {
-    return (int) $user->id === (int) $customerId;
+    return $user instanceof \App\Models\Client && (int) $user->id === (int) $customerId;
 });
 
 Broadcast::channel('customer.{customerId}', function ($user, int $customerId) {
