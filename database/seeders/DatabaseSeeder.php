@@ -15,6 +15,10 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        // Formules d'abonnement : données de référence, requises par le
+        // changement de plan marchand sur toute installation.
+        $this->call(PlanSeeder::class);
+
         // Utilisateur de test principal avec un solde de points connu
         User::factory()->create([
             'name'           => 'Test User',

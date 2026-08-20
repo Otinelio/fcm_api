@@ -2,7 +2,10 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 
 return new class extends Migration
 {
@@ -20,6 +23,13 @@ return new class extends Migration
 
     public function down(): void
     {
+        // Les comptes créés via OAuth depuis le passage de cette migration
+        // n'ont pas de mot de passe : reconstruire la contrainte NOT NULL
+        // sans backfill échoue dès qu'un seul de ces comptes existe.
+        DB::table('restaurants')
+            ->whereNull('password')
+            ->update(['password' => Hash::make(Str::random(40))]);
+
         Schema::table('restaurants', function (Blueprint $table) {
             $table->dropUnique('restaurants_oauth_unique');
             $table->dropColumn(['oauth_provider', 'oauth_id']);

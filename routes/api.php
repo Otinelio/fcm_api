@@ -13,6 +13,9 @@ use App\Http\Controllers\Api\ClientAuthController;
 use App\Http\Controllers\Api\RestaurantAuthController;
 use App\Http\Controllers\Api\LoyaltyProgramController;
 use App\Http\Controllers\Api\LoyaltyCardController;
+use App\Http\Controllers\Api\LoyaltyRewardController;
+use App\Http\Controllers\Api\MerchantCampaignController;
+use App\Http\Controllers\Api\MerchantDashboardController;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Auth routes (clients mobiles)
@@ -62,6 +65,9 @@ Route::prefix('auth/merchant')->group(function () {
     Route::middleware('auth:sanctum')->group(function () {
         Route::get('/me',        [RestaurantAuthController::class, 'me']);
         Route::put('/profile',   [RestaurantAuthController::class, 'updateBusinessInfo']);
+        Route::post('/profile/logo',   [RestaurantAuthController::class, 'uploadLogo'])->middleware('throttle:10,1');
+        Route::delete('/profile/logo', [RestaurantAuthController::class, 'deleteLogo']);
+        Route::put('/plan',      [RestaurantAuthController::class, 'updatePlan']);
         Route::post('/logout',   [RestaurantAuthController::class, 'logout']);
     });
 });
@@ -69,10 +75,31 @@ Route::prefix('auth/merchant')->group(function () {
 // Programme de fidélité (step2/3 de l'onboarding marchand)
 Route::middleware('auth:sanctum')->post('/loyalty-programs', [LoyaltyProgramController::class, 'store']);
 
+// Dashboard marchand (clientèle, validation, statistiques, campagnes)
+Route::middleware('auth:sanctum')->prefix('merchant')->group(function () {
+    Route::get('/stats',                    [MerchantDashboardController::class, 'stats']);
+    Route::get('/clients',                  [MerchantDashboardController::class, 'clients']);
+    Route::get('/clients/lookup',           [MerchantDashboardController::class, 'lookup']);
+    Route::get('/clients/{loyaltyCard}',    [MerchantDashboardController::class, 'showClient']);
+    Route::post('/clients/{loyaltyCard}/stamps', [MerchantDashboardController::class, 'addStamp']);
+    Route::post('/clients/{loyaltyCard}/redeem-cashback', [MerchantDashboardController::class, 'redeemCashback']);
+
+    Route::get('/rewards/lookup',              [MerchantDashboardController::class, 'lookupReward']);
+    Route::post('/rewards/{loyaltyReward}/redeem', [MerchantDashboardController::class, 'redeemReward']);
+    Route::post('/rewards/{loyaltyReward}/cancel', [MerchantDashboardController::class, 'cancelReward']);
+
+    Route::get('/campaigns',            [MerchantCampaignController::class, 'index']);
+    Route::get('/campaigns/recipients', [MerchantCampaignController::class, 'recipients']);
+    Route::post('/campaigns',           [MerchantCampaignController::class, 'store']);
+});
+
 Route::middleware('auth:sanctum')->prefix('loyalty-cards')->group(function () {
+    Route::get('/', [LoyaltyCardController::class, 'index']);
     Route::post('/join', [LoyaltyCardController::class, 'join']);
     Route::get('/{loyaltyCard}', [LoyaltyCardController::class, 'show']);
 });
+
+Route::middleware('auth:sanctum')->get('/rewards', [LoyaltyRewardController::class, 'index']);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Autres routes existantes

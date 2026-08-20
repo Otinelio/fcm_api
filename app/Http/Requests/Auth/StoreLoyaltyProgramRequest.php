@@ -11,31 +11,102 @@ class StoreLoyaltyProgramRequest extends FormRequest
         return true;
     }
 
+    /**
+     * Doit rester synchronisée avec `_stampEmojiChoices`/`_stampIconChoices`
+     * dans `merchant_step3_screen.dart` (Flutter) — ce sont les seuls choix
+     * proposés à l'utilisateur, toute valeur hors liste est un payload forgé.
+     */
     public function rules(): array
     {
         return [
-            'mode'                    => ['required', 'string', 'in:stamps,points,spend'],
-            'goal'                    => ['required', 'integer', 'min:1'],
+            // Pas de mode "points" indépendant : les points ne sont qu'une
+            // unité de progression interne au mode "spend" (Achats).
+            'mode'                    => ['required', 'string', 'in:stamps,spend,cashback'],
+            // Cashback n'a pas de cycle objectif/récompense — pas de goal.
+            'goal'                    => ['required_unless:mode,cashback', 'integer', 'min:1', 'max:1000000'],
+            'cashback_percentage'     => ['required_if:mode,cashback', 'numeric', 'min:0.1', 'max:100'],
+            'cashback_redeem_cap_percent' => ['nullable', 'integer', 'min:1', 'max:100'],
+            // Taux de conversion mode "Achat" (FCFA pour 1 point) — 100 par
+            // défaut côté Flutter, réglable par restaurant.
+            'fcfa_per_point'          => ['nullable', 'integer', 'min:1', 'max:1000000'],
             'reward_description'      => ['nullable', 'string', 'max:255'],
+            'rewards'                 => [
+                'nullable',
+                'array',
+                'min:1',
+                function ($attribute, $value, $fail) {
+                    if (is_array($value)) {
+                        $lastGoal = 0;
+                        foreach ($value as $index => $tier) {
+                            $goal = isset($tier['goal']) ? (int)$tier['goal'] : 0;
+                            if ($goal <= $lastGoal) {
+                                $fail("Le palier #" . ($index + 1) . " ($goal) doit être strictement supérieur au palier précédent ($lastGoal).");
+                                return;
+                            }
+                            $lastGoal = $goal;
+                        }
+                    }
+                },
+            ],
+            'rewards.*.goal'          => ['required', 'integer', 'min:1', 'max:1000000'],
+            'rewards.*.reward_description' => ['required', 'string', 'max:255'],
+            // Niveaux de fidélité (Bronze/Argent/Or...) : indépendants des
+            // paliers de récompense ci-dessus. Seuil = cycles complétés à
+            // vie (Tampons/Achats) ou cashback cumulé à vie (Cashback).
+            'levels'                  => [
+                'nullable',
+                'array',
+                'min:1',
+                function ($attribute, $value, $fail) {
+                    if (is_array($value)) {
+                        $lastThreshold = -1;
+                        foreach ($value as $index => $level) {
+                            $threshold = isset($level['threshold']) ? (float) $level['threshold'] : -1;
+                            if ($threshold <= $lastThreshold) {
+                                $fail("Le niveau #" . ($index + 1) . " doit avoir un seuil strictement supérieur au niveau précédent.");
+                                return;
+                            }
+                            $lastThreshold = $threshold;
+                        }
+                    }
+                },
+            ],
+            'levels.*.name'           => ['required_with:levels', 'string', 'max:100'],
+            'levels.*.threshold'      => ['required_with:levels', 'numeric', 'min:0'],
+            // Durée de validité d'une récompense débloquée, en jours.
+            // `null`/absent = pas d'expiration.
+            'reward_validity_days'    => ['nullable', 'integer', 'min:1', 'max:3650'],
             'show_review_button'      => ['sometimes', 'boolean'],
-            'google_review_url'       => ['nullable', 'string', 'max:255'],
-            'color_primary'           => ['required', 'string', 'max:9'],
-            'color_secondary'         => ['required', 'string', 'max:9'],
+            'google_review_url'       => ['nullable', 'string', 'url', 'max:255', 'required_if:show_review_button,true'],
+            'color_primary'           => ['required', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
+            'color_secondary'         => ['required', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
             'stamp_design_type'       => ['required', 'string', 'in:check,icon,emoji'],
-            'stamp_emoji'             => ['nullable', 'string', 'max:10'],
-            'stamp_icon'              => ['nullable', 'string', 'max:50'],
-            'card_decoration_pattern' => ['nullable', 'string', 'max:50'],
-            'card_gradient_type'      => ['nullable', 'string', 'max:50'],
-            'logo_url'                => ['nullable', 'string', 'max:500'],
+            'stamp_emoji'             => ['nullable', 'string', 'in:✨,🎁,⭐,❤️,☕,🍰,🔥,💎,🏆,👑,🌟,💫,🎉,🍕,🍔,🧋', 'required_if:stamp_design_type,emoji'],
+            'stamp_icon'              => ['nullable', 'string', 'in:check_rounded,star_rounded,favorite_rounded,local_cafe_rounded,card_giftcard_rounded,auto_awesome_rounded,emoji_emotions_rounded,diamond_rounded', 'required_if:stamp_design_type,icon'],
+            'card_decoration_pattern' => ['nullable', 'string', 'in:none,lines,waves,dots'],
+            'card_gradient_type'      => ['nullable', 'string', 'in:linear,radial'],
+            'logo_url'                => ['nullable', 'string', 'url', 'max:500'],
         ];
     }
 
     public function messages(): array
     {
         return [
-            'mode.required' => 'Le mode de récompense est obligatoire.',
-            'mode.in'       => 'Mode de récompense invalide.',
-            'goal.required' => 'L\'objectif est obligatoire.',
+            'mode.required'                         => 'Le mode de récompense est obligatoire.',
+            'mode.in'                               => 'Mode de récompense invalide.',
+            'goal.required_unless'                  => 'L\'objectif est obligatoire.',
+            'goal.max'                              => 'L\'objectif est trop élevé.',
+            'cashback_percentage.required_if'       => 'Le pourcentage de cashback est obligatoire.',
+            'rewards.*.goal.required'               => 'Le palier de chaque récompense est obligatoire.',
+            'rewards.*.reward_description.required' => 'La description de chaque récompense est obligatoire.',
+            'google_review_url.required_if'         => 'Veuillez renseigner le lien d\'avis.',
+            'google_review_url.url'                 => 'Lien d\'avis invalide.',
+            'color_primary.regex'                   => 'Couleur principale invalide.',
+            'color_secondary.regex'                 => 'Couleur secondaire invalide.',
+            'stamp_emoji.required_if'               => 'Veuillez choisir un emoji.',
+            'stamp_emoji.in'                        => 'Emoji invalide.',
+            'stamp_icon.required_if'                => 'Veuillez choisir une icône.',
+            'stamp_icon.in'                         => 'Icône invalide.',
         ];
     }
 }

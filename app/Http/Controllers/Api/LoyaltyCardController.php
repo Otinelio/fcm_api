@@ -12,11 +12,34 @@ use Illuminate\Http\Request;
 class LoyaltyCardController extends Controller
 {
     /**
+     * GET /api/loyalty-cards
+     *
+     * Toutes les cartes du client authentifié — c'est cet appel qui repeuple
+     * le wallet au démarrage de l'app. Sans lui, les cartes créées par
+     * `join()` n'existaient que le temps de la session en mémoire : chaque
+     * relance de l'app repartait des données de démo.
+     */
+    public function index(Request $request): JsonResponse
+    {
+        /** @var Client $client */
+        $client = $request->user();
+
+        $cards = $client->loyaltyCards()
+            ->with(['restaurant', 'loyaltyProgram'])
+            ->orderByDesc('created_at')
+            ->get();
+
+        return response()->json(['cards' => $cards]);
+    }
+
+    /**
      * POST /api/loyalty-cards/join
      *
      * Rejoint le programme de fidélité d'un restaurant à partir de son
-     * `qr_token` (scan QR ou saisie manuelle côté client). Idempotent : un
-     * second scan renvoie la même carte plutôt que d'en créer une autre.
+     * `qr_token` (scan QR caméra) ou de son `short_code` (saisie manuelle
+     * côté client — le `qr_token` est un UUID à 36 caractères, imprononçable
+     * et illisible à taper à la main). Idempotent : un second scan renvoie
+     * la même carte plutôt que d'en créer une autre.
      */
     public function join(Request $request): JsonResponse
     {
@@ -24,7 +47,11 @@ class LoyaltyCardController extends Controller
             'qr_token' => ['required', 'string'],
         ]);
 
-        $restaurant = Restaurant::where('qr_token', $request->qr_token)->first();
+        $code = trim($request->qr_token);
+
+        $restaurant = Restaurant::where('qr_token', strtolower($code))
+            ->orWhere('short_code', strtoupper($code))
+            ->first();
 
         if (! $restaurant) {
             return response()->json([
@@ -48,11 +75,18 @@ class LoyaltyCardController extends Controller
             ['loyalty_program_id' => $program->id],
         );
 
+        // `firstOrCreate` positionne cet attribut avant tout rechargement —
+        // il faut le lire ici, `load()` ne le préserve pas forcément.
+        $wasRecentlyCreated = $card->wasRecentlyCreated;
+
         $card->load(['restaurant', 'loyaltyProgram']);
 
         return response()->json([
-            'message' => 'Carte de fidélité rejointe.',
-            'card'    => $card,
+            'message'              => $wasRecentlyCreated
+                ? 'Carte de fidélité rejointe.'
+                : 'Vous êtes déjà membre de ce commerce.',
+            'card'                 => $card,
+            'was_recently_created' => $wasRecentlyCreated,
         ], 201);
     }
 

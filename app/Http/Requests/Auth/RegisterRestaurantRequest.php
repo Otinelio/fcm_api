@@ -18,7 +18,7 @@ class RegisterRestaurantRequest extends FormRequest
             // (le téléphone et le reste des infos business arrivent au step1,
             // via PUT /auth/merchant/profile).
             'email'    => ['required', 'email', 'max:255', 'unique:restaurants,email'],
-            'password' => ['required', 'string', 'min:6'],
+            'password' => ['required', 'string', 'min:8'],
         ];
     }
 
@@ -29,7 +29,7 @@ class RegisterRestaurantRequest extends FormRequest
             'email.email'       => 'L\'adresse email n\'est pas valide.',
             'email.unique'      => 'Un compte existe déjà avec cette adresse email.',
             'password.required' => 'Le mot de passe est obligatoire.',
-            'password.min'      => 'Le mot de passe doit contenir au moins 6 caractères.',
+            'password.min'      => 'Le mot de passe doit contenir au moins 8 caractères.',
         ];
     }
 }

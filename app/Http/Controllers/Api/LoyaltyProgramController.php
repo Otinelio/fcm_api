@@ -25,6 +25,16 @@ class LoyaltyProgramController extends Controller
         $restaurant = $request->user();
 
         $data = $request->validated();
+        $isCashback = $data['mode'] === 'cashback';
+
+        // Cashback n'a ni objectif ni palier de récompense (pas de cycle) —
+        // `goal`/`rewards` ne sont ni envoyés ni exigés pour ce mode.
+        $rewards = $isCashback ? null : ($data['rewards'] ?? [
+            [
+                'goal'               => (int) $data['goal'],
+                'reward_description' => $data['reward_description'] ?? '',
+            ],
+        ]);
 
         $program = $restaurant->loyaltyProgram()->updateOrCreate(
             ['restaurant_id' => $restaurant->id],
@@ -33,8 +43,11 @@ class LoyaltyProgramController extends Controller
                 'type'      => $data['mode'],
                 'is_active' => true,
                 'config'    => [
-                    'goal'                    => $data['goal'],
-                    'reward_description'      => $data['reward_description'] ?? null,
+                    'goal'                    => $isCashback ? null : $data['goal'],
+                    'reward_description'      => $isCashback ? null : ($data['reward_description'] ?? null),
+                    'rewards'                 => $rewards,
+                    'levels'                  => $data['levels'] ?? null,
+                    'reward_validity_days'    => $data['reward_validity_days'] ?? null,
                     'show_review_button'      => $data['show_review_button'] ?? false,
                     'google_review_url'       => $data['google_review_url'] ?? null,
                     'color_primary'           => $data['color_primary'],
@@ -45,6 +58,14 @@ class LoyaltyProgramController extends Controller
                     'card_decoration_pattern' => $data['card_decoration_pattern'] ?? null,
                     'card_gradient_type'      => $data['card_gradient_type'] ?? null,
                     'logo_url'                => $data['logo_url'] ?? null,
+                    // Taux de conversion mode "Achat", réglable par restaurant
+                    // (100 FCFA = 1 point par défaut) — auparavant figé à 500
+                    // en dur, ignorant la valeur réellement soumise.
+                    'fcfa_per_point'          => $data['mode'] === 'spend'
+                        ? ($data['fcfa_per_point'] ?? 100)
+                        : null,
+                    'cashback_percentage'        => $isCashback ? $data['cashback_percentage'] : null,
+                    'cashback_redeem_cap_percent' => $isCashback ? ($data['cashback_redeem_cap_percent'] ?? null) : null,
                 ],
             ],
         );

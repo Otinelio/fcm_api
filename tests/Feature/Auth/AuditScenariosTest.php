@@ -306,4 +306,96 @@ class AuditScenariosTest extends TestCase
         ]);
         $this->assertTrue(Hash::check('samepass123', $client->fresh()->password));
     }
+
+    // ── Chemins nominaux de l'inscription — jusqu'ici seuls les cas d'erreur
+    // étaient couverts, jamais le succès lui-même. ─────────────────────────
+
+    public function test_validate_register_step1_accepts_a_fresh_unused_phone(): void
+    {
+        $response = $this->postJson('/api/auth/validate-register-step1', [
+            'first_name' => 'Nouveau',
+            'phone'      => '+22891000030',
+            'birthdate'  => '2000-01-01',
+        ]);
+
+        $response->assertOk();
+        $this->assertDatabaseMissing('clients', ['phone' => '+22891000030']);
+    }
+
+    public function test_register_creates_the_client_and_returns_a_usable_token(): void
+    {
+        $response = $this->postJson('/api/auth/register', [
+            'first_name'            => 'Nouveau',
+            'phone'                 => '+22891000031',
+            'password'              => 'password123',
+            'password_confirmation' => 'password123',
+            'birthdate'             => '2000-01-01',
+        ]);
+
+        $response->assertCreated();
+        $response->assertJsonStructure([
+            'access_token',
+            'token_type',
+            'client' => ['id', 'uuid', 'first_name', 'phone', 'referral_code'],
+        ]);
+
+        $this->assertDatabaseHas('clients', [
+            'phone'      => '+22891000031',
+            'first_name' => 'Nouveau',
+        ]);
+
+        $token = $response->json('access_token');
+        $me = $this->withHeader('Authorization', "Bearer {$token}")->getJson('/api/auth/me');
+        $me->assertOk();
+        $me->assertJsonPath('client.phone', '+22891000031');
+    }
+
+    public function test_register_links_referrer_via_referral_code(): void
+    {
+        $referrer = $this->classicClient([
+            'phone'         => '+22891000032',
+            'referral_code' => 'PARRAIN1',
+        ]);
+
+        $response = $this->postJson('/api/auth/register', [
+            'first_name'            => 'Filleul',
+            'phone'                 => '+22891000033',
+            'password'              => 'password123',
+            'password_confirmation' => 'password123',
+            'referral_code'         => 'PARRAIN1',
+        ]);
+
+        $response->assertCreated();
+        $this->assertDatabaseHas('clients', [
+            'phone'                 => '+22891000033',
+            'referred_by_client_id' => $referrer->id,
+        ]);
+    }
+
+    public function test_complete_social_profile_fills_missing_fields_on_an_authenticated_social_client(): void
+    {
+        $client = Client::create([
+            'uuid'           => (string) Str::uuid(),
+            'first_name'     => 'Google',
+            'email'          => 'google-user@example.com',
+            'oauth_provider' => 'google',
+            'oauth_id'       => 'g-complete-1',
+        ]);
+        $token = $client->createToken('mobile-app')->plainTextToken;
+
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/auth/social/complete-profile', [
+                'first_name' => 'Google',
+                'last_name'  => 'User',
+                'phone'      => '+22891000034',
+                'birthdate'  => '1998-05-20',
+            ]);
+
+        $response->assertOk();
+        $this->assertDatabaseHas('clients', [
+            'id'    => $client->id,
+            'phone' => '+22891000034',
+        ]);
+        $this->assertNotNull($client->fresh()->referral_code);
+    }
 }

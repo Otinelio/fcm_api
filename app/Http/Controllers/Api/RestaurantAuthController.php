@@ -9,14 +9,19 @@ use App\Http\Requests\Auth\RegisterRestaurantRequest;
 use App\Http\Requests\Auth\ResetPasswordRestaurantRequest;
 use App\Http\Requests\Auth\SocialLoginRequest;
 use App\Http\Requests\Auth\UpdateBusinessInfoRequest;
+use App\Http\Requests\Auth\UpdateLogoRequest;
 use App\Http\Requests\Auth\VerifyResetOtpRestaurantRequest;
 use App\Models\Restaurant;
 use App\Services\Auth\SocialAuthService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use MatanYadaev\EloquentSpatial\Objects\Point;
 
 class RestaurantAuthController extends Controller
 {
@@ -155,10 +160,103 @@ class RestaurantAuthController extends Controller
         /** @var Restaurant $restaurant */
         $restaurant = $request->user();
 
-        $restaurant->update($request->validated());
+        $data = collect($request->validated())->except(['latitude', 'longitude'])->all();
+        if ($request->filled('latitude') && $request->filled('longitude')) {
+            $data['location'] = new Point((float) $request->latitude, (float) $request->longitude);
+        }
+
+        $restaurant->update($data);
 
         return response()->json([
             'message'    => 'Informations du commerce mises à jour.',
+            'restaurant' => $this->restaurantData($restaurant->fresh()),
+        ]);
+    }
+
+    /**
+     * POST /api/auth/merchant/profile/logo
+     *
+     * Upload (ou remplace) le logo du commerce.
+     */
+    public function uploadLogo(UpdateLogoRequest $request): JsonResponse
+    {
+        /** @var Restaurant $restaurant */
+        $restaurant = $request->user();
+
+        // Un ré-upload peut changer de format (png -> jpg) : on nettoie toute
+        // ancienne extension avant d'écrire la nouvelle, sinon l'ancien fichier
+        // reste orphelin sur le disque.
+        $this->purgeLogoFiles($restaurant);
+
+        $extension = $request->file('logo')->extension();
+        $path = $request->file('logo')->storeAs('logos', "{$restaurant->uuid}.{$extension}", 'public');
+
+        if ($path === false) {
+            return response()->json([
+                'message' => 'Échec de l\'enregistrement du logo. Réessayez.',
+            ], 500);
+        }
+
+        // Chemin déterministe (logos/{uuid}.{ext}) : un ré-upload avec la même
+        // extension produirait la même URL, servie en cache côté client sinon.
+        $restaurant->update(['logo_url' => asset(Storage::url($path)) . '?v=' . now()->timestamp]);
+
+        return response()->json([
+            'message'    => 'Logo mis à jour.',
+            'restaurant' => $this->restaurantData($restaurant->fresh()),
+        ]);
+    }
+
+    /**
+     * DELETE /api/auth/merchant/profile/logo
+     */
+    public function deleteLogo(Request $request): JsonResponse
+    {
+        /** @var Restaurant $restaurant */
+        $restaurant = $request->user();
+
+        $this->purgeLogoFiles($restaurant);
+        $restaurant->update(['logo_url' => null]);
+
+        return response()->json([
+            'message'    => 'Logo supprimé.',
+            'restaurant' => $this->restaurantData($restaurant->fresh()),
+        ]);
+    }
+
+    /**
+     * Supprime tous les fichiers logo connus pour ce restaurant, toutes
+     * extensions confondues (utilisé avant un ré-upload et lors de la
+     * suppression).
+     */
+    private function purgeLogoFiles(Restaurant $restaurant): void
+    {
+        foreach (['jpg', 'jpeg', 'png', 'webp'] as $ext) {
+            Storage::disk('public')->delete("logos/{$restaurant->uuid}.{$ext}");
+        }
+    }
+
+    /**
+     * PUT /api/auth/merchant/plan
+     *
+     * Rattache le commerce à une formule de la table `plans`. Le paiement
+     * n'est pas encore branché : le changement est direct.
+     */
+    public function updatePlan(Request $request): JsonResponse
+    {
+        $request->validate([
+            'plan' => ['required', 'string', 'exists:plans,slug'],
+        ]);
+
+        /** @var Restaurant $restaurant */
+        $restaurant = $request->user();
+
+        $restaurant->update([
+            'plan_id' => DB::table('plans')->where('slug', $request->plan)->value('id'),
+        ]);
+
+        return response()->json([
+            'message'    => 'Formule mise à jour.',
             'restaurant' => $this->restaurantData($restaurant->fresh()),
         ]);
     }
@@ -275,6 +373,7 @@ class RestaurantAuthController extends Controller
             'phone'             => $restaurant->phone,
             'address'           => $restaurant->address,
             'city'              => $restaurant->city,
+            'country'           => $restaurant->country,
             'description'       => $restaurant->description,
             'logo_url'          => $restaurant->logo_url,
             'whatsapp'          => $restaurant->whatsapp,
@@ -282,7 +381,22 @@ class RestaurantAuthController extends Controller
             'facebook'          => $restaurant->facebook,
             'tiktok'            => $restaurant->tiktok,
             'qr_token'          => $restaurant->qr_token,
-            'has_business_info' => $restaurant->hasBusinessInfo(),
+            'short_code'        => $restaurant->short_code,
+            'has_business_info'   => $restaurant->hasBusinessInfo(),
+            'latitude'            => $restaurant->location?->latitude,
+            'longitude'           => $restaurant->location?->longitude,
+            'has_location'        => $restaurant->hasLocation(),
+            'has_loyalty_program' => $restaurant->hasLoyaltyProgram(),
+            // Config du programme (couleurs, mode, objectif, style de tampon) :
+            // le dashboard marchand la rejoue telle quelle, sans second appel.
+            'loyalty_program'     => $restaurant->loyaltyProgram
+                ? [
+                    'type'   => $restaurant->loyaltyProgram->type,
+                    'config' => $restaurant->loyaltyProgram->config,
+                ]
+                : null,
+            'plan'                => $restaurant->planSlug(),
+            'sms_credits'         => (int) $restaurant->sms_credits,
             'created_at'        => $restaurant->created_at?->toIso8601String(),
         ];
     }
