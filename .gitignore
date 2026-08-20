@@ -1,4 +1,7 @@
 *.log
+/docker/nginx-dev/nginx-dev.pid
+/docker/nginx-dev/tmp/*
+!/docker/nginx-dev/tmp/.gitkeep
 *.apk
 .DS_Store
 .env

@@ -33,6 +33,8 @@ Run `php artisan storage:link` once per environment so files on the `public` dis
 
 Reverb runs as a separate process (started by `composer dev`) on `REVERB_SERVER_PORT` (default 8080); it must be running for presence-channel checks (`PresenceChecker`) and reward broadcasts to work locally.
 
+`composer dev` also starts an `nginx` dev proxy (`docker/nginx-dev/nginx-dev.conf`) on port 8000, routing `/app/*` to Reverb (8080) and everything else to `artisan serve` (moved to 8001, internal-only). Port 8000 is the only one meant to be reached from outside (LAN IP or the ngrok tunnel in the Flutter app's `scripts/dev.sh`) — a free ngrok tunnel only forwards one port, so Reverb's websocket has to ride the same port as the API rather than exposing 8080 separately. Don't run `artisan serve --port=8000` directly alongside this proxy (port clash); use `composer dev` or, for a Reverb-less API-only session, `artisan serve` alone on its default port.
+
 ## Architecture: two coexisting domains
 
 The codebase is mid-migration from an early single-tenant prototype to a multi-tenant platform. Both still exist side by side — know which one you're touching:

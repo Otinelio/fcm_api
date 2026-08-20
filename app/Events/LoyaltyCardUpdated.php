@@ -39,7 +39,7 @@ class LoyaltyCardUpdated implements ShouldBroadcast
         return [
             'id'                    => $this->card->id,
             'progress'              => $this->card->progress,
-            'cashback_balance_fcfa' => $this->card->cashback_balance_fcfa,
+            'cashback_balance_fcfa' => $this->card->cashback_available_fcfa,
             'status'                => $this->card->status,
             'reward_unlocked'       => $this->card->status === 'reward_available',
             // Mêmes accesseurs que le fetch initial (`LoyaltyCard::$appends`)

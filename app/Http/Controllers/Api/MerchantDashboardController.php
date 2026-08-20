@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Events\LoyaltyCardUpdated;
+use App\Events\LoyaltyRewardUpdated;
 use App\Http\Controllers\Controller;
 use App\Models\LoyaltyCard;
 use App\Models\Restaurant;
+use App\Services\Loyalty\RewardTierService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -241,7 +243,7 @@ class MerchantDashboardController extends Controller
 
         $amountFcfa = (float) $request->input('amount_fcfa');
         $redeemAmount = (float) $request->input('redeem_amount_fcfa');
-        $balance = (float) $loyaltyCard->cashback_balance_fcfa;
+        $balance = $loyaltyCard->cashback_available_fcfa;
 
         if ($redeemAmount > $balance) {
             return response()->json([
@@ -325,30 +327,41 @@ class MerchantDashboardController extends Controller
             }
         }
 
-        $goal = (int) ($program->config['goal'] ?? 10);
+        $tierService = app(RewardTierService::class);
+        $tiers = $tierService->tiers($program);
+        $tierIndex = $tierService->completedCycles($loyaltyCard);
+
         $progress = $loyaltyCard->progress ?? [];
         $current = (int) ($progress['stamps_current'] ?? 0) + $earned;
 
         // Un seul gros achat peut franchir l'objectif plusieurs fois d'un
         // coup (ex. objectif 500, +1050 points) : chaque franchissement
-        // débloque sa propre récompense, et le reste doit être conservé
+        // débloque sa propre récompense (son propre palier si plusieurs sont
+        // configurés — `config['rewards']`), et le reste doit être conservé
         // pour le nouveau cycle plutôt que d'être perdu à un simple reset.
-        $cyclesCompleted = 0;
-        if ($goal > 0) {
-            while ($current >= $goal) {
-                $current -= $goal;
-                $cyclesCompleted++;
+        $unlockedTiers = []; // [['span' => int, 'title' => string, 'validity_days' => ?int], ...]
+        while (true) {
+            $span = $tierService->spanFor($tiers, $tierIndex);
+            if ($current < $span) {
+                break;
             }
+            $current -= $span;
+            $unlockedTiers[] = [
+                'span'          => $span,
+                'title'         => $tierService->titleFor($tiers, $tierIndex),
+                'validity_days' => $tierService->validityDaysFor($tiers, $tierIndex),
+            ];
+            $tierIndex++;
         }
+        $cyclesCompleted = count($unlockedTiers);
         $rewardUnlocked = $cyclesCompleted > 0;
 
         $restaurantId = $restaurant->id;
-        $rewardTitle = $program->config['reward_description'] ?? 'Récompense débloquée';
-        $validityDays = $program->config['reward_validity_days'] ?? null;
+        $createdRewardIds = [];
 
         DB::transaction(function () use (
-            $loyaltyCard, $progress, $current, $rewardUnlocked, $cyclesCompleted, $goal,
-            $earned, $amountFcfa, $restaurantId, $rewardTitle, $validityDays,
+            $loyaltyCard, $progress, $current, $rewardUnlocked, $unlockedTiers,
+            $earned, $amountFcfa, $restaurantId, &$createdRewardIds,
         ) {
             $loyaltyCard->update([
                 'progress'         => array_merge($progress, ['stamps_current' => $current]),
@@ -370,11 +383,11 @@ class MerchantDashboardController extends Controller
             // Signal durable, indépendant du compteur `progress` (qui vient
             // d'être remis à `current`) : compter les cycles complétés à vie
             // ne doit jamais dépendre d'un compteur remis à zéro plus tard.
-            for ($i = 0; $i < $cyclesCompleted; $i++) {
+            foreach ($unlockedTiers as $tier) {
                 DB::table('loyalty_transactions')->insert([
                     'loyalty_card_id'   => $loyaltyCard->id,
                     'type'              => 'cycle_completed',
-                    'value'             => $goal,
+                    'value'             => $tier['span'],
                     'validation_method' => 'merchant_app',
                     'status'            => 'valid',
                     'created_at'        => now(),
@@ -384,13 +397,14 @@ class MerchantDashboardController extends Controller
                 // Une récompense tracée par franchissement — titre figé au
                 // moment du déblocage (jamais résolu depuis `config` plus
                 // tard, qui peut avoir changé entretemps).
-                \App\Models\LoyaltyReward::create([
+                $reward = \App\Models\LoyaltyReward::create([
                     'loyalty_card_id' => $loyaltyCard->id,
                     'restaurant_id'   => $restaurantId,
-                    'title'           => $rewardTitle,
+                    'title'           => $tier['title'],
                     'unlocked_at'     => now(),
-                    'expires_at'      => $validityDays ? now()->addDays((int) $validityDays) : null,
+                    'expires_at'      => $tier['validity_days'] ? now()->addDays((int) $tier['validity_days']) : null,
                 ]);
+                $createdRewardIds[] = $reward->id;
             }
         });
 
@@ -400,6 +414,13 @@ class MerchantDashboardController extends Controller
         // pull-to-refresh (voir routes/channels.php, canal `loyalty.{clientId}`
         // déjà autorisé).
         LoyaltyCardUpdated::dispatch($freshCard);
+
+        // Une récompense fraîchement débloquée doit apparaître dans l'écran
+        // "Mes récompenses" du client sans qu'il n'ait à tirer pour rafraîchir.
+        foreach (\App\Models\LoyaltyReward::whereIn('id', $createdRewardIds)->get() as $reward) {
+            $reward->setRelation('loyaltyCard', $freshCard);
+            LoyaltyRewardUpdated::dispatch($reward);
+        }
 
         $message = match (true) {
             $cyclesCompleted > 1 => "{$cyclesCompleted} récompenses débloquées !",
@@ -474,9 +495,12 @@ class MerchantDashboardController extends Controller
             $lock->release();
         }
 
+        $freshReward = $loyaltyReward->fresh()->load('loyaltyCard.client');
+        LoyaltyRewardUpdated::dispatch($freshReward);
+
         return response()->json([
             'message' => 'Récompense validée.',
-            'reward'  => $this->rewardData($loyaltyReward->fresh()->load('loyaltyCard.client')),
+            'reward'  => $this->rewardData($freshReward),
         ]);
     }
 
@@ -502,9 +526,12 @@ class MerchantDashboardController extends Controller
             'cancel_reason' => $request->input('reason'),
         ]);
 
+        $freshReward = $loyaltyReward->fresh()->load('loyaltyCard.client');
+        LoyaltyRewardUpdated::dispatch($freshReward);
+
         return response()->json([
             'message' => 'Récompense annulée.',
-            'reward'  => $this->rewardData($loyaltyReward->fresh()),
+            'reward'  => $this->rewardData($freshReward),
         ]);
     }
 
@@ -587,7 +614,9 @@ class MerchantDashboardController extends Controller
             'restaurant_id'    => (string) $card->restaurant_id,
             'card_code'        => $card->card_code,
             'stamps_current'   => (int) ($card->progress['stamps_current'] ?? 0),
+            'cashback_balance_fcfa' => $card->cashback_available_fcfa,
             'status'           => $card->status,
+            'level'            => $card->level,
             'reward_available' => $card->status === 'reward_available',
             'last_activity_at' => $card->last_activity_at?->toIso8601String(),
             'created_at'       => $card->created_at?->toIso8601String(),

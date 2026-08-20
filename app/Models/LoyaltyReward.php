@@ -45,9 +45,18 @@ class LoyaltyReward extends Model
     {
         static::creating(function (LoyaltyReward $reward) {
             $reward->status ??= 'available';
-            $reward->redeem_token ??= (string) Str::uuid();
+            $reward->redeem_token ??= self::generateRedeemToken();
             $reward->unlocked_at ??= now();
         });
+    }
+
+    private static function generateRedeemToken(): string
+    {
+        do {
+            $token = Str::upper(Str::random(6));
+        } while (self::where('redeem_token', $token)->exists());
+
+        return $token;
     }
 
     public function getIsExpiredAttribute(): bool

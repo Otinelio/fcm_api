@@ -8,6 +8,7 @@ use App\Models\LoyaltyCard;
 use App\Models\Restaurant;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class LoyaltyCardController extends Controller
 {
@@ -104,5 +105,62 @@ class LoyaltyCardController extends Controller
         $loyaltyCard->load(['restaurant', 'loyaltyProgram']);
 
         return response()->json(['card' => $loyaltyCard]);
+    }
+
+    /**
+     * GET /api/loyalty-cards/{loyaltyCard}/history
+     *
+     * Historique réel des opérations de la carte (tampons/points accordés,
+     * cashback crédité/utilisé) — remplace l'historique fabriqué côté
+     * Flutter (`card_detail_screen.dart::_historyFor`, dates et montants
+     * inventés). Ne renvoie pas les lignes `cycle_completed` : ce sont un
+     * signal technique interne (comptage des cycles pour les niveaux), pas
+     * une opération que le client a "faite" — la ligne `stamp`/`cashback_*`
+     * correspondante suffit à raconter l'historique.
+     */
+    public function history(Request $request, LoyaltyCard $loyaltyCard): JsonResponse
+    {
+        if ($loyaltyCard->client_id !== $request->user()->id) {
+            return response()->json([
+                'message' => 'Cette carte ne vous appartient pas.',
+            ], 403);
+        }
+
+        $entries = DB::table('loyalty_transactions')
+            ->where('loyalty_card_id', $loyaltyCard->id)
+            ->whereIn('type', ['stamp', 'cashback_earn', 'cashback_redeem'])
+            ->where('status', 'valid')
+            // `created_at` seul ne départage pas deux opérations survenues à
+            // la même seconde (ex. crédit de points puis usage du cashback
+            // dans la même requête de test) : `id` croissant reflète l'ordre
+            // d'insertion réel, donc l'ordre chronologique exact.
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->limit(100)
+            ->get(['type', 'value', 'montant_commande_fcfa', 'created_at']);
+
+        // Colonnes `decimal` : le driver Postgres les renvoie en chaînes
+        // ("1.00"), pas en nombres — sans ce cast, le client recevrait des
+        // valeurs à parser lui-même au lieu de nombres JSON. Entier quand la
+        // partie décimale est nulle (tampons/points sont toujours entiers,
+        // et la plupart des montants FCFA aussi) plutôt que systématiquement
+        // flottant, pour ne pas afficher "1.0" là où "1" est attendu.
+        $numeric = function ($value) {
+            if ($value === null) {
+                return null;
+            }
+            $float = (float) $value;
+
+            return floor($float) == $float ? (int) $float : $float;
+        };
+
+        $entries = $entries->map(fn ($row) => [
+            'type'                  => $row->type,
+            'value'                 => $numeric($row->value),
+            'montant_commande_fcfa' => $numeric($row->montant_commande_fcfa),
+            'created_at'            => $row->created_at,
+        ]);
+
+        return response()->json(['history' => $entries]);
     }
 }

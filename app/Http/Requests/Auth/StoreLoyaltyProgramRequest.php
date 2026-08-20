@@ -26,6 +26,8 @@ class StoreLoyaltyProgramRequest extends FormRequest
             'goal'                    => ['required_unless:mode,cashback', 'integer', 'min:1', 'max:1000000'],
             'cashback_percentage'     => ['required_if:mode,cashback', 'numeric', 'min:0.1', 'max:100'],
             'cashback_redeem_cap_percent' => ['nullable', 'integer', 'min:1', 'max:100'],
+            // Expiration du solde cashback (jours sans crédit) — optionnelle.
+            'cashback_expiry_days'    => ['nullable', 'integer', 'min:1', 'max:3650'],
             // Taux de conversion mode "Achat" (FCFA pour 1 point) — 100 par
             // défaut côté Flutter, réglable par restaurant.
             'fcfa_per_point'          => ['nullable', 'integer', 'min:1', 'max:1000000'],
@@ -50,6 +52,10 @@ class StoreLoyaltyProgramRequest extends FormRequest
             ],
             'rewards.*.goal'          => ['required', 'integer', 'min:1', 'max:1000000'],
             'rewards.*.reward_description' => ['required', 'string', 'max:255'],
+            // Durée de validité propre à ce palier — `null` = utilise la
+            // valeur par défaut du programme (`reward_validity_days`), elle
+            // aussi optionnelle.
+            'rewards.*.validity_days' => ['nullable', 'integer', 'min:1', 'max:3650'],
             // Niveaux de fidélité (Bronze/Argent/Or...) : indépendants des
             // paliers de récompense ci-dessus. Seuil = cycles complétés à
             // vie (Tampons/Achats) ou cashback cumulé à vie (Cashback).

@@ -97,6 +97,7 @@ Route::middleware('auth:sanctum')->prefix('loyalty-cards')->group(function () {
     Route::get('/', [LoyaltyCardController::class, 'index']);
     Route::post('/join', [LoyaltyCardController::class, 'join']);
     Route::get('/{loyaltyCard}', [LoyaltyCardController::class, 'show']);
+    Route::get('/{loyaltyCard}/history', [LoyaltyCardController::class, 'history']);
 });
 
 Route::middleware('auth:sanctum')->get('/rewards', [LoyaltyRewardController::class, 'index']);
