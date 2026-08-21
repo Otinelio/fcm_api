@@ -32,19 +32,25 @@ corriger.
 
 ## Décisions validées avec l'utilisateur
 
-1. Remplacement complet du cycle répété par une progression **cumulative à
-   vie** à paliers fixes (ex. 500 / 1000 / 2000 points), pour tous les types
-   de programme (stamps, spend, cashback).
-2. Une fois le dernier palier atteint, le client reste au niveau max — aucune
-   récompense supplémentaire automatique tant que le marchand n'ajoute pas de
-   palier.
+1. **Un seul palier configuré** (cas le plus courant aujourd'hui, ex. 10
+   tampons → café offert) : comportement **cycle répété inchangé** —
+   objectif constant, remis à zéro à chaque déblocage, répété à l'infini.
+   Pas de système de niveau affiché. C'est une clarification obtenue après
+   la première décision ci-dessous : la remplacer partout aurait cassé la
+   carte à tampons classique, qui est le cas d'usage majoritaire.
+2. **Deux paliers ou plus** : progression **cumulative à vie** à seuils
+   fixes (ex. 500 / 1000 / 2000 points), jamais reset, pour tous les types
+   de programme (stamps, spend, cashback). Une fois le dernier palier
+   atteint, le client reste au niveau max — aucune récompense supplémentaire
+   automatique tant que le marchand n'ajoute pas de palier (pas de second
+   cycle, contrairement au cas mono-palier).
 3. Programmes existants : migration automatique best-effort (fusion des
    `rewards[]`/`levels[]` existants par index).
 4. Icônes de niveau : automatiques par rang, jamais choisies par le marchand
    — séquence fixe 🥉🥈🥇💎👑 (paliers 1 à 5), puis ⭐ pour tout palier au-delà
    du 5e.
 5. Programme à un seul palier configuré : pas de système de niveau affiché,
-   uniquement objectif + récompense.
+   uniquement objectif + récompense (conséquence directe de la décision 1).
 
 ## Modèle de données
 
@@ -81,20 +87,24 @@ historiques migrées sans correspondance fiable.
 
 ### Métrique de progression (cumul à vie)
 
-Pas de nouvelle colonne dénormalisée sur `loyalty_cards`. Calculée à la
-volée par somme sur `loyalty_transactions`, exactement comme
-`LoyaltyLevelService::lifetimeCashback()` le fait déjà pour le cashback :
+Pas de nouvelle colonne dénormalisée sur `loyalty_cards`. La distinction
+mono/multi-palier (décisions 1-2 ci-dessus) se répercute directement ici,
+sans double calcul :
 
-- Types `stamps`/`spend` : `SUM(amount)` sur les transactions de type
-  `stamp` (ou équivalent) pour la carte — remplace `completedCycles()`
-  (qui comptait des cycles, pas des unités).
-- Type `cashback` : inchangé, `SUM(amount)` sur les transactions
-  `cashback_earn`.
+- **Mono-palier** : `loyalty_cards.progress['stamps_current']` reste
+  exactement ce qu'il est aujourd'hui — un compteur remis à zéro à chaque
+  déblocage (cycle répété), inchangé.
+- **Multi-palier (stamps/spend)** : le même champ
+  `progress['stamps_current']` devient un compteur **jamais remis à zéro**
+  (simple addition à chaque gain, pas de modulo) — utilisé tel quel comme
+  métrique cumulative à vie, sans requête supplémentaire.
+- **Cashback (mono ou multi)** : inchangé, `SUM(value)` sur les
+  transactions `cashback_earn` (`LoyaltyTierService::lifetimeCashback()`,
+  déplacé tel quel depuis `LoyaltyLevelService`).
 
-`loyalty_cards.progress['stamps_current']` devient obsolète pour le calcul
-du palier/niveau (il n'y a plus de cycle à faire progresser) — la colonne
-reste en base (pas de migration destructive) mais n'est plus le
-compteur de référence.
+La distinction mono/multi vient uniquement du nombre de lignes dans
+`loyalty_program_tiers` pour le programme — pas d'un champ de config
+séparé.
 
 ## Service unifié : `LoyaltyTierService`
 
