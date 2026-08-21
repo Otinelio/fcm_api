@@ -29,4 +29,9 @@ class LoyaltyProgram extends Model
     {
         return $this->belongsTo(Restaurant::class);
     }
+
+    public function tiers()
+    {
+        return $this->hasMany(LoyaltyProgramTier::class)->orderBy('order');
+    }
 }

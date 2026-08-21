@@ -16,6 +16,7 @@ class LoyaltyReward extends Model
 {
     protected $fillable = [
         'loyalty_card_id',
+        'program_tier_id',
         'restaurant_id',
         'title',
         'status',
@@ -75,6 +76,11 @@ class LoyaltyReward extends Model
     public function loyaltyCard()
     {
         return $this->belongsTo(LoyaltyCard::class);
+    }
+
+    public function programTier()
+    {
+        return $this->belongsTo(LoyaltyProgramTier::class);
     }
 
     public function restaurant()
