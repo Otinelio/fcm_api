@@ -7,7 +7,7 @@ use App\Events\LoyaltyRewardUpdated;
 use App\Http\Controllers\Controller;
 use App\Models\LoyaltyCard;
 use App\Models\Restaurant;
-use App\Services\Loyalty\RewardTierService;
+use App\Services\Loyalty\LoyaltyTierService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -181,11 +181,20 @@ class MerchantDashboardController extends Controller
             'amount_fcfa.required' => 'Le montant de l\'achat est requis pour ce programme.',
         ]);
 
+        $tierService = app(LoyaltyTierService::class);
+        $tiers = $tierService->tiers($program);
+        $metricBefore = $tierService->lifetimeCashback($loyaltyCard);
+
         $amountFcfa = (float) $request->input('amount_fcfa');
         $percentage = (float) ($program->config['cashback_percentage'] ?? 0);
         $earnedFcfa = round($amountFcfa * $percentage / 100, 2);
 
-        DB::transaction(function () use ($loyaltyCard, $earnedFcfa, $amountFcfa) {
+        $restaurantId = $restaurant->id;
+        $createdRewardIds = [];
+
+        DB::transaction(function () use (
+            $loyaltyCard, $earnedFcfa, $amountFcfa, $tiers, $metricBefore, $restaurantId, &$createdRewardIds,
+        ) {
             $loyaltyCard->update([
                 'cashback_balance_fcfa' => $loyaltyCard->cashback_balance_fcfa + $earnedFcfa,
                 'last_activity_at'      => now(),
@@ -201,18 +210,67 @@ class MerchantDashboardController extends Controller
                 'created_at'            => now(),
                 'updated_at'            => now(),
             ]);
+
+            $metricAfter = $metricBefore + $earnedFcfa;
+            foreach ($this->crossedTiers($tiers, $metricBefore, $metricAfter) as $tier) {
+                $reward = \App\Models\LoyaltyReward::create([
+                    'loyalty_card_id' => $loyaltyCard->id,
+                    'restaurant_id'   => $restaurantId,
+                    'program_tier_id' => $tier['id'],
+                    'title'           => $tier['reward_description'],
+                    'unlocked_at'     => now(),
+                    'expires_at'      => $tier['validity_days'] ? now()->addDays((int) $tier['validity_days']) : null,
+                ]);
+                $createdRewardIds[] = $reward->id;
+            }
         });
 
         $freshCard = $loyaltyCard->fresh()->load(['client', 'loyaltyProgram']);
         LoyaltyCardUpdated::dispatch($freshCard);
 
+        foreach (\App\Models\LoyaltyReward::whereIn('id', $createdRewardIds)->get() as $reward) {
+            $reward->setRelation('loyaltyCard', $freshCard);
+            LoyaltyRewardUpdated::dispatch($reward);
+        }
+
         return response()->json([
             'message'         => number_format($earnedFcfa, 0, ',', ' ') . ' FCFA de cashback crédités.',
-            'reward_unlocked' => false,
-            'rewards_unlocked_count' => 0,
+            'reward_unlocked' => count($createdRewardIds) > 0,
+            'rewards_unlocked_count' => count($createdRewardIds),
             'cashback_earned' => $earnedFcfa,
             'client'          => $this->cardData($freshCard),
         ]);
+    }
+
+    /**
+     * Paliers franchis entre `$before` et `$after` (métrique croissante,
+     * jamais reset) :
+     * - 1 seul palier configuré : répété à chaque multiple entier franchi
+     *   (ex. tous les 1000 FCFA de cashback cumulés).
+     * - 2+ paliers : chacun ne peut être franchi qu'une fois dans la vie de
+     *   la carte (seuils strictement croissants), plafonné au dernier.
+     *
+     * @param array $tiers Depuis `LoyaltyTierService::tiers()`.
+     * @return array Sous-ensemble de `$tiers` (avec doublons possibles si mono-palier).
+     */
+    private function crossedTiers(array $tiers, float $before, float $after): array
+    {
+        if (count($tiers) === 0) {
+            return [];
+        }
+
+        if (count($tiers) === 1) {
+            $goal = $tiers[0]['goal'];
+            $crossedBefore = intdiv((int) $before, $goal);
+            $crossedAfter = intdiv((int) $after, $goal);
+
+            return array_fill(0, max(0, $crossedAfter - $crossedBefore), $tiers[0]);
+        }
+
+        return array_values(array_filter(
+            $tiers,
+            fn ($tier) => $tier['goal'] > $before && $tier['goal'] <= $after,
+        ));
     }
 
     /**
@@ -327,40 +385,37 @@ class MerchantDashboardController extends Controller
             }
         }
 
-        $tierService = app(RewardTierService::class);
+        $tierService = app(LoyaltyTierService::class);
         $tiers = $tierService->tiers($program);
-        $tierIndex = $tierService->completedCycles($loyaltyCard);
 
         $progress = $loyaltyCard->progress ?? [];
-        $current = (int) ($progress['stamps_current'] ?? 0) + $earned;
+        $before = (int) ($progress['stamps_current'] ?? 0);
 
-        // Un seul gros achat peut franchir l'objectif plusieurs fois d'un
-        // coup (ex. objectif 500, +1050 points) : chaque franchissement
-        // débloque sa propre récompense (son propre palier si plusieurs sont
-        // configurés — `config['rewards']`), et le reste doit être conservé
-        // pour le nouveau cycle plutôt que d'être perdu à un simple reset.
-        $unlockedTiers = []; // [['span' => int, 'title' => string, 'validity_days' => ?int], ...]
-        while (true) {
-            $span = $tierService->spanFor($tiers, $tierIndex);
-            if ($current < $span) {
-                break;
+        $unlockedTiers = []; // [['reward_description' => string, 'validity_days' => ?int, 'id' => ?int], ...]
+        if (count($tiers) <= 1) {
+            // Mono-palier : comportement cycle répété inchangé — un gros
+            // achat peut franchir l'objectif plusieurs fois d'un coup, le
+            // reste est conservé pour le nouveau cycle plutôt que perdu.
+            $goal = $tiers[0]['goal'] ?? 10;
+            $current = $before + $earned;
+            while ($current >= $goal) {
+                $current -= $goal;
+                $unlockedTiers[] = $tiers[0];
             }
-            $current -= $span;
-            $unlockedTiers[] = [
-                'span'          => $span,
-                'title'         => $tierService->titleFor($tiers, $tierIndex),
-                'validity_days' => $tierService->validityDaysFor($tiers, $tierIndex),
-            ];
-            $tierIndex++;
+        } else {
+            // Multi-palier : cumulatif à vie, jamais reset, plafonné.
+            $current = $before + $earned;
+            $unlockedTiers = $this->crossedTiers($tiers, $before, $current);
         }
         $cyclesCompleted = count($unlockedTiers);
         $rewardUnlocked = $cyclesCompleted > 0;
+        $isMonoTier = count($tiers) <= 1;
 
         $restaurantId = $restaurant->id;
         $createdRewardIds = [];
 
         DB::transaction(function () use (
-            $loyaltyCard, $progress, $current, $rewardUnlocked, $unlockedTiers,
+            $loyaltyCard, $progress, $current, $rewardUnlocked, $unlockedTiers, $isMonoTier,
             $earned, $amountFcfa, $restaurantId, &$createdRewardIds,
         ) {
             $loyaltyCard->update([
@@ -380,27 +435,31 @@ class MerchantDashboardController extends Controller
                 'updated_at'             => now(),
             ]);
 
-            // Signal durable, indépendant du compteur `progress` (qui vient
-            // d'être remis à `current`) : compter les cycles complétés à vie
-            // ne doit jamais dépendre d'un compteur remis à zéro plus tard.
             foreach ($unlockedTiers as $tier) {
-                DB::table('loyalty_transactions')->insert([
-                    'loyalty_card_id'   => $loyaltyCard->id,
-                    'type'              => 'cycle_completed',
-                    'value'             => $tier['span'],
-                    'validation_method' => 'merchant_app',
-                    'status'            => 'valid',
-                    'created_at'        => now(),
-                    'updated_at'        => now(),
-                ]);
+                // Mono-palier uniquement : signal historique conservé pour
+                // byte-identicité avec le comportement d'avant (plus aucun
+                // code ne le consomme — `LoyaltyTierService::tiers()` lit
+                // directement `progress['stamps_current']`/la table de
+                // paliers). Le multi-palier n'en a jamais eu besoin : il ne
+                // connaît pas de "cycle" à signaler, la métrique cumulative
+                // ne reset jamais.
+                if ($isMonoTier) {
+                    DB::table('loyalty_transactions')->insert([
+                        'loyalty_card_id'   => $loyaltyCard->id,
+                        'type'              => 'cycle_completed',
+                        'value'             => $tier['goal'],
+                        'validation_method' => 'merchant_app',
+                        'status'            => 'valid',
+                        'created_at'        => now(),
+                        'updated_at'        => now(),
+                    ]);
+                }
 
-                // Une récompense tracée par franchissement — titre figé au
-                // moment du déblocage (jamais résolu depuis `config` plus
-                // tard, qui peut avoir changé entretemps).
                 $reward = \App\Models\LoyaltyReward::create([
                     'loyalty_card_id' => $loyaltyCard->id,
                     'restaurant_id'   => $restaurantId,
-                    'title'           => $tier['title'],
+                    'program_tier_id' => $tier['id'],
+                    'title'           => $tier['reward_description'],
                     'unlocked_at'     => now(),
                     'expires_at'      => $tier['validity_days'] ? now()->addDays((int) $tier['validity_days']) : null,
                 ]);

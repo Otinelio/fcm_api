@@ -328,4 +328,52 @@ class AddStampTest extends TestCase
         $this->assertSame('Or', $level['name']);
         $this->assertTrue($level['is_max_level']);
     }
+
+    public function test_multi_tier_stamps_unlocks_each_tier_once_and_caps_at_max(): void
+    {
+        [$restaurant, $token] = $this->restaurantWithToken();
+        $program = LoyaltyProgram::create([
+            'restaurant_id' => $restaurant->id, 'name' => 'Programme', 'type' => 'stamps', 'config' => [],
+        ]);
+        \App\Models\LoyaltyProgramTier::create([
+            'loyalty_program_id' => $program->id, 'order' => 1,
+            'goal' => 2, 'level_name' => 'Bronze', 'reward_description' => 'Café offert',
+        ]);
+        \App\Models\LoyaltyProgramTier::create([
+            'loyalty_program_id' => $program->id, 'order' => 2,
+            'goal' => 4, 'level_name' => 'Or', 'reward_description' => 'Menu offert',
+        ]);
+        $card = $this->cardFor($restaurant, $program);
+
+        // 1er tampon : aucun palier atteint.
+        $r1 = $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson("/api/merchant/clients/{$card->id}/stamps");
+        $r1->assertJsonPath('rewards_unlocked_count', 0);
+        $this->assertSame(1, $card->fresh()->progress['stamps_current']);
+
+        // 2e tampon : palier Bronze (2) atteint -> 1 récompense, pas de reset.
+        $r2 = $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson("/api/merchant/clients/{$card->id}/stamps");
+        $r2->assertJsonPath('rewards_unlocked_count', 1);
+        $this->assertSame(2, $card->fresh()->progress['stamps_current']);
+        $reward = \App\Models\LoyaltyReward::where('loyalty_card_id', $card->id)->first();
+        $this->assertSame('Café offert', $reward->title);
+        $bronzeTier = \App\Models\LoyaltyProgramTier::where('level_name', 'Bronze')->first();
+        $this->assertSame($bronzeTier->id, $reward->program_tier_id);
+
+        // 3e et 4e tampons -> palier Or (4) atteint -> 1 récompense de plus (2 au total).
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson("/api/merchant/clients/{$card->id}/stamps")->assertOk();
+        $r4 = $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson("/api/merchant/clients/{$card->id}/stamps");
+        $r4->assertJsonPath('rewards_unlocked_count', 1);
+        $this->assertSame(2, \App\Models\LoyaltyReward::where('loyalty_card_id', $card->id)->count());
+
+        // 5e tampon : plus aucun palier à débloquer (plafonné, pas de second cycle).
+        $r5 = $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson("/api/merchant/clients/{$card->id}/stamps");
+        $r5->assertJsonPath('rewards_unlocked_count', 0);
+        $this->assertSame(2, \App\Models\LoyaltyReward::where('loyalty_card_id', $card->id)->count());
+        $this->assertSame(5, $card->fresh()->progress['stamps_current']);
+    }
 }
