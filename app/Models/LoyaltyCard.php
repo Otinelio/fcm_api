@@ -63,15 +63,15 @@ class LoyaltyCard extends Model
             return $tiers[0]['goal'] ?? 10;
         }
 
-        // Multi-palier : objectif = écart jusqu'au prochain palier non
-        // atteint (ou jusqu'au premier palier si aucun n'est encore atteint).
-        $resolved = $service->resolve($this);
+        // Multi-palier : objectif = seuil ABSOLU du prochain palier non
+        // atteint (la métrique — `stamps_current` — est elle-même un cumul à
+        // vie, pas un compteur par cycle : renvoyer un écart produirait un
+        // affichage incohérent, ex. "700/500" pour une carte à 700 cumulés
+        // progressant vers un palier à 1000).
         $current = (float) ($this->progress['stamps_current'] ?? 0);
-        foreach ($tiers as $i => $tier) {
+        foreach ($tiers as $tier) {
             if ($tier['goal'] > $current) {
-                $previousGoal = $i > 0 ? $tiers[$i - 1]['goal'] : 0;
-
-                return $tier['goal'] - $previousGoal;
+                return $tier['goal'];
             }
         }
 

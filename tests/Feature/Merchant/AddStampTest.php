@@ -376,4 +376,63 @@ class AddStampTest extends TestCase
         $this->assertSame(2, \App\Models\LoyaltyReward::where('loyalty_card_id', $card->id)->count());
         $this->assertSame(5, $card->fresh()->progress['stamps_current']);
     }
+
+    public function test_multi_tier_goal_attribute_exposes_absolute_next_threshold_not_a_span(): void
+    {
+        [$restaurant, $token] = $this->restaurantWithToken();
+        $program = LoyaltyProgram::create([
+            'restaurant_id' => $restaurant->id, 'name' => 'Programme', 'type' => 'stamps', 'config' => [],
+        ]);
+        \App\Models\LoyaltyProgramTier::create([
+            'loyalty_program_id' => $program->id, 'order' => 1,
+            'goal' => 500, 'level_name' => 'Bronze', 'reward_description' => 'Café offert',
+        ]);
+        \App\Models\LoyaltyProgramTier::create([
+            'loyalty_program_id' => $program->id, 'order' => 2,
+            'goal' => 1000, 'level_name' => 'Or', 'reward_description' => 'Menu offert',
+        ]);
+        $card = $this->cardFor($restaurant, $program);
+        $card->update(['progress' => ['stamps_current' => 700]]);
+
+        // Palier suivant non atteint = 1000 (seuil absolu), pas 500
+        // (1000 - 500, l'écart) : à 700 cumulés, "700/500" n'aurait aucun sens.
+        $this->assertSame(1000, $card->fresh()->goal);
+    }
+
+    /**
+     * Toutes les autres cartes mono-palier de ce fichier construisent le
+     * programme via `config['goal']` uniquement (aucune ligne
+     * `loyalty_program_tiers`) : elles n'exercent donc que le fallback
+     * legacy de `LoyaltyTierService::tiers()`, jamais la branche qui lit une
+     * vraie ligne en base dans le cas mono-palier. Ce test couvre cette
+     * branche-là spécifiquement, pour garantir que le comportement "cycle
+     * répété" reste identique qu'il vienne du fallback ou d'une vraie ligne.
+     */
+    public function test_mono_tier_from_real_db_row_behaves_like_legacy_fallback(): void
+    {
+        [$restaurant, $token] = $this->restaurantWithToken();
+        $program = LoyaltyProgram::create([
+            'restaurant_id' => $restaurant->id, 'name' => 'Programme', 'type' => 'stamps', 'config' => [],
+        ]);
+        \App\Models\LoyaltyProgramTier::create([
+            'loyalty_program_id' => $program->id, 'order' => 1,
+            'goal' => 3, 'level_name' => null, 'reward_description' => 'Café offert',
+        ]);
+        $card = $this->cardFor($restaurant, $program);
+
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson("/api/merchant/clients/{$card->id}/stamps")->assertOk();
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson("/api/merchant/clients/{$card->id}/stamps")->assertOk();
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson("/api/merchant/clients/{$card->id}/stamps");
+
+        $response->assertOk();
+        $response->assertJsonPath('reward_unlocked', true);
+        $this->assertSame(0, $card->fresh()->progress['stamps_current']);
+        $this->assertDatabaseHas('loyalty_transactions', [
+            'loyalty_card_id' => $card->id,
+            'type'            => 'cycle_completed',
+        ]);
+    }
 }

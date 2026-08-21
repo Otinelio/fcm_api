@@ -22,9 +22,13 @@ class StoreLoyaltyProgramRequest extends FormRequest
             // Pas de mode "points" indépendant : les points ne sont qu'une
             // unité de progression interne au mode "spend" (Achats).
             'mode'                    => ['required', 'string', 'in:stamps,spend,cashback'],
-            // Cashback n'a pas de cycle objectif/récompense — pas de goal.
-            // Plus envoyé par le Flutter (remplacé par `tiers.*.goal`) mais
-            // reste accepté/optionnel pour ne rien casser côté clients tiers.
+            // Champ vestigial : plus utilisé (remplacé par `tiers.*.goal`),
+            // laissé `nullable` uniquement pour que d'anciennes données
+            // stockées ou des tests qui y font encore référence ne fassent
+            // pas échouer la validation. `tiers[]` est désormais *requis*
+            // pour stamps/spend (voir plus bas) — tout client qui envoie
+            // encore seulement `goal` sans `tiers` reçoit un 422, c'est un
+            // changement cassant pour les clients tiers pas encore à jour.
             'goal'                    => ['nullable', 'integer', 'min:1', 'max:1000000'],
             'cashback_percentage'     => ['required_if:mode,cashback', 'numeric', 'min:0.1', 'max:100'],
             'cashback_redeem_cap_percent' => ['nullable', 'integer', 'min:1', 'max:100'],

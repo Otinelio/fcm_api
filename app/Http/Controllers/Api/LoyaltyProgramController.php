@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\StoreLoyaltyProgramRequest;
 use App\Models\Restaurant;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\DB;
 
 class LoyaltyProgramController extends Controller
 {
@@ -27,51 +28,62 @@ class LoyaltyProgramController extends Controller
         $data = $request->validated();
         $isCashback = $data['mode'] === 'cashback';
 
-        $program = $restaurant->loyaltyProgram()->updateOrCreate(
-            ['restaurant_id' => $restaurant->id],
-            [
-                'name'      => $restaurant->name ?? 'Programme de fidélité',
-                'type'      => $data['mode'],
-                'is_active' => true,
-                'config'    => [
-                    'reward_validity_days'    => $data['reward_validity_days'] ?? null,
-                    'show_review_button'      => $data['show_review_button'] ?? false,
-                    'google_review_url'       => $data['google_review_url'] ?? null,
-                    'color_primary'           => $data['color_primary'],
-                    'color_secondary'         => $data['color_secondary'],
-                    'stamp_design_type'       => $data['stamp_design_type'],
-                    'stamp_emoji'             => $data['stamp_emoji'] ?? null,
-                    'stamp_icon'              => $data['stamp_icon'] ?? null,
-                    'card_decoration_pattern' => $data['card_decoration_pattern'] ?? null,
-                    'card_gradient_type'      => $data['card_gradient_type'] ?? null,
-                    'logo_url'                => $data['logo_url'] ?? null,
-                    // Taux de conversion mode "Achat", réglable par restaurant
-                    // (100 FCFA = 1 point par défaut) — auparavant figé à 500
-                    // en dur, ignorant la valeur réellement soumise.
-                    'fcfa_per_point'          => $data['mode'] === 'spend'
-                        ? ($data['fcfa_per_point'] ?? 100)
-                        : null,
-                    'cashback_percentage'        => $isCashback ? $data['cashback_percentage'] : null,
-                    'cashback_redeem_cap_percent' => $isCashback ? ($data['cashback_redeem_cap_percent'] ?? null) : null,
-                    // Expiration du solde cashback après N jours sans crédit
-                    // (spec §4.1/§12, optionnelle) — `null` = pas d'expiration.
-                    'cashback_expiry_days'       => $isCashback ? ($data['cashback_expiry_days'] ?? null) : null,
+        $program = DB::transaction(function () use ($restaurant, $data, $isCashback) {
+            $program = $restaurant->loyaltyProgram()->updateOrCreate(
+                ['restaurant_id' => $restaurant->id],
+                [
+                    'name'      => $restaurant->name ?? 'Programme de fidélité',
+                    'type'      => $data['mode'],
+                    'is_active' => true,
+                    'config'    => [
+                        'reward_validity_days'    => $data['reward_validity_days'] ?? null,
+                        'show_review_button'      => $data['show_review_button'] ?? false,
+                        'google_review_url'       => $data['google_review_url'] ?? null,
+                        'color_primary'           => $data['color_primary'],
+                        'color_secondary'         => $data['color_secondary'],
+                        'stamp_design_type'       => $data['stamp_design_type'],
+                        'stamp_emoji'             => $data['stamp_emoji'] ?? null,
+                        'stamp_icon'              => $data['stamp_icon'] ?? null,
+                        'card_decoration_pattern' => $data['card_decoration_pattern'] ?? null,
+                        'card_gradient_type'      => $data['card_gradient_type'] ?? null,
+                        'logo_url'                => $data['logo_url'] ?? null,
+                        // Taux de conversion mode "Achat", réglable par restaurant
+                        // (100 FCFA = 1 point par défaut) — auparavant figé à 500
+                        // en dur, ignorant la valeur réellement soumise.
+                        'fcfa_per_point'          => $data['mode'] === 'spend'
+                            ? ($data['fcfa_per_point'] ?? 100)
+                            : null,
+                        'cashback_percentage'        => $isCashback ? $data['cashback_percentage'] : null,
+                        'cashback_redeem_cap_percent' => $isCashback ? ($data['cashback_redeem_cap_percent'] ?? null) : null,
+                        // Expiration du solde cashback après N jours sans crédit
+                        // (spec §4.1/§12, optionnelle) — `null` = pas d'expiration.
+                        'cashback_expiry_days'       => $isCashback ? ($data['cashback_expiry_days'] ?? null) : null,
+                    ],
                 ],
-            ],
-        );
+            );
 
-        // Paliers unifiés (niveau + récompense) — table dédiée
-        // `loyalty_program_tiers`, remplacée intégralement à chaque envoi.
-        $program->tiers()->delete();
-        foreach ($data['tiers'] ?? [] as $index => $tier) {
-            $program->tiers()->create([
-                'order'               => $index + 1,
-                'goal'                => (int) $tier['goal'],
-                'level_name'          => $tier['level_name'] ?? null,
-                'reward_description'  => $tier['reward_description'],
-                'validity_days'       => $tier['validity_days'] ?? null,
-            ]);
-        }
+            // Paliers unifiés (niveau + récompense) — table dédiée
+            // `loyalty_program_tiers`, mise à jour par upsert clé sur `order`
+            // (pas delete+recreate) pour préserver les ids existants : les
+            // `loyalty_rewards.program_tier_id` déjà émis restent liés, et un
+            // ré-enregistrement du même palier (goal/nom/récompense inchangés)
+            // ne change pas son id.
+            $tiers = $data['tiers'] ?? [];
+            foreach ($tiers as $index => $tier) {
+                $program->tiers()->updateOrCreate(
+                    ['loyalty_program_id' => $program->id, 'order' => $index + 1],
+                    [
+                        'goal'                => (int) $tier['goal'],
+                        'level_name'          => $tier['level_name'] ?? null,
+                        'reward_description'  => $tier['reward_description'],
+                        'validity_days'       => $tier['validity_days'] ?? null,
+                    ],
+                );
+            }
+            $program->tiers()->where('order', '>', count($tiers))->delete();
+
+            return $program;
+        });
 
         return response()->json([
             'message'         => 'Programme de fidélité enregistré.',

@@ -46,7 +46,7 @@ class LoyaltyTierService
                 ->map(fn ($r) => [
                     'id'                  => $r->id,
                     'order'               => $r->order,
-                    'goal'                => (int) $r->goal,
+                    'goal'                => max(1, (int) $r->goal),
                     'level_name'          => $r->level_name,
                     'reward_description'  => $r->reward_description,
                     'validity_days'       => $r->validity_days ?? ($program->config['reward_validity_days'] ?? null),
