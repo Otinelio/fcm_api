@@ -65,7 +65,7 @@ class LoyaltyProgramCreationTest extends TestCase
         $this->assertSame('cashback', $program->type);
         $this->assertSame(5.0, (float) $program->config['cashback_percentage']);
         $this->assertSame(50, $program->config['cashback_redeem_cap_percent']);
-        $this->assertNull($program->config['goal']);
+        $this->assertSame(0, $program->tiers()->count());
     }
 
     public function test_cashback_requires_a_percentage(): void
@@ -89,7 +89,9 @@ class LoyaltyProgramCreationTest extends TestCase
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson('/api/loyalty-programs', [
                 'mode'            => 'spend',
-                'goal'            => 500,
+                'tiers'           => [
+                    ['goal' => 500, 'reward_description' => 'Café offert'],
+                ],
                 'fcfa_per_point'  => 100,
                 ...$this->baseVisuals,
             ]);
@@ -106,12 +108,73 @@ class LoyaltyProgramCreationTest extends TestCase
 
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson('/api/loyalty-programs', [
-                'mode' => 'stamps',
-                'goal' => 8,
+                'mode'  => 'stamps',
+                'tiers' => [
+                    ['goal' => 8, 'reward_description' => 'Café offert'],
+                ],
                 ...$this->baseVisuals,
             ]);
 
         $response->assertCreated();
         $this->assertSame('stamps', $restaurant->fresh()->loyaltyProgram->type);
+    }
+
+    public function test_creates_multi_tier_program(): void
+    {
+        [$restaurant, $token] = $this->restaurantWithToken();
+
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/loyalty-programs', [
+                'mode'  => 'stamps',
+                'tiers' => [
+                    ['goal' => 500, 'level_name' => 'Découverte', 'reward_description' => 'Boisson offerte'],
+                    ['goal' => 1000, 'level_name' => 'Habitué', 'reward_description' => 'Dessert offert'],
+                    ['goal' => 2000, 'level_name' => 'VIP', 'reward_description' => 'Menu offert'],
+                ],
+                ...$this->baseVisuals,
+            ]);
+
+        $response->assertCreated();
+        $program = $restaurant->fresh()->loyaltyProgram;
+        $this->assertSame(3, $program->tiers()->count());
+        $this->assertSame('Découverte', $program->tiers->first()->level_name);
+    }
+
+    public function test_tiers_goal_must_be_strictly_increasing(): void
+    {
+        [, $token] = $this->restaurantWithToken();
+
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/loyalty-programs', [
+                'mode'  => 'stamps',
+                'tiers' => [
+                    ['goal' => 1000, 'level_name' => 'A', 'reward_description' => 'X'],
+                    ['goal' => 500, 'level_name' => 'B', 'reward_description' => 'Y'],
+                ],
+                ...$this->baseVisuals,
+            ]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['tiers']);
+    }
+
+    public function test_updating_program_replaces_tiers(): void
+    {
+        [$restaurant, $token] = $this->restaurantWithToken();
+        $this->withHeader('Authorization', "Bearer {$token}")->postJson('/api/loyalty-programs', [
+            'mode' => 'stamps',
+            'tiers' => [['goal' => 10, 'level_name' => null, 'reward_description' => 'Café']],
+            ...$this->baseVisuals,
+        ])->assertCreated();
+
+        $this->withHeader('Authorization', "Bearer {$token}")->postJson('/api/loyalty-programs', [
+            'mode' => 'stamps',
+            'tiers' => [['goal' => 20, 'level_name' => null, 'reward_description' => 'Dessert']],
+            ...$this->baseVisuals,
+        ])->assertCreated();
+
+        $program = $restaurant->fresh()->loyaltyProgram;
+        $this->assertSame(1, $program->tiers()->count());
+        $this->assertSame(20, $program->tiers->first()->goal);
     }
 }

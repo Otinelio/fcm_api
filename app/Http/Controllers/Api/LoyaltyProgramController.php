@@ -27,15 +27,6 @@ class LoyaltyProgramController extends Controller
         $data = $request->validated();
         $isCashback = $data['mode'] === 'cashback';
 
-        // Cashback n'a ni objectif ni palier de récompense (pas de cycle) —
-        // `goal`/`rewards` ne sont ni envoyés ni exigés pour ce mode.
-        $rewards = $isCashback ? null : ($data['rewards'] ?? [
-            [
-                'goal'               => (int) $data['goal'],
-                'reward_description' => $data['reward_description'] ?? '',
-            ],
-        ]);
-
         $program = $restaurant->loyaltyProgram()->updateOrCreate(
             ['restaurant_id' => $restaurant->id],
             [
@@ -43,10 +34,6 @@ class LoyaltyProgramController extends Controller
                 'type'      => $data['mode'],
                 'is_active' => true,
                 'config'    => [
-                    'goal'                    => $isCashback ? null : $data['goal'],
-                    'reward_description'      => $isCashback ? null : ($data['reward_description'] ?? null),
-                    'rewards'                 => $rewards,
-                    'levels'                  => $data['levels'] ?? null,
                     'reward_validity_days'    => $data['reward_validity_days'] ?? null,
                     'show_review_button'      => $data['show_review_button'] ?? false,
                     'google_review_url'       => $data['google_review_url'] ?? null,
@@ -73,9 +60,22 @@ class LoyaltyProgramController extends Controller
             ],
         );
 
+        // Paliers unifiés (niveau + récompense) — table dédiée
+        // `loyalty_program_tiers`, remplacée intégralement à chaque envoi.
+        $program->tiers()->delete();
+        foreach ($data['tiers'] ?? [] as $index => $tier) {
+            $program->tiers()->create([
+                'order'               => $index + 1,
+                'goal'                => (int) $tier['goal'],
+                'level_name'          => $tier['level_name'] ?? null,
+                'reward_description'  => $tier['reward_description'],
+                'validity_days'       => $tier['validity_days'] ?? null,
+            ]);
+        }
+
         return response()->json([
             'message'         => 'Programme de fidélité enregistré.',
-            'loyalty_program' => $program,
+            'loyalty_program' => $program->load('tiers'),
         ], 201);
     }
 }

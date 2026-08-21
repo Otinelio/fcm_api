@@ -392,7 +392,15 @@ class RestaurantAuthController extends Controller
             'loyalty_program'     => $restaurant->loyaltyProgram
                 ? [
                     'type'   => $restaurant->loyaltyProgram->type,
-                    'config' => $restaurant->loyaltyProgram->config,
+                    'config' => [
+                        ...$restaurant->loyaltyProgram->config ?? [],
+                        'tiers' => $restaurant->loyaltyProgram->tiers->map(fn ($t) => [
+                            'goal'                => $t->goal,
+                            'level_name'          => $t->level_name,
+                            'reward_description'  => $t->reward_description,
+                            'validity_days'       => $t->validity_days,
+                        ])->all(),
+                    ],
                 ]
                 : null,
             'plan'                => $restaurant->planSlug(),
