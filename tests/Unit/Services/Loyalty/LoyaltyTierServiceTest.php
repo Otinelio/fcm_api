@@ -126,4 +126,25 @@ class LoyaltyTierServiceTest extends TestCase
         $this->assertTrue($resolved['is_max_level']);
         $this->assertNull($resolved['percent_to_next']);
     }
+
+    public function test_resolve_before_first_tier_reports_current_status_on_first_tier(): void
+    {
+        $card = $this->cardWithProgram('stamps', [], stampsCurrent: 200);
+        LoyaltyProgramTier::create([
+            'loyalty_program_id' => $card->loyalty_program_id, 'order' => 1,
+            'goal' => 500, 'level_name' => 'Découverte', 'reward_description' => 'Boisson offerte',
+        ]);
+        LoyaltyProgramTier::create([
+            'loyalty_program_id' => $card->loyalty_program_id, 'order' => 2,
+            'goal' => 1000, 'level_name' => 'VIP', 'reward_description' => 'Menu offert',
+        ]);
+
+        $resolved = app(LoyaltyTierService::class)->resolve($card->fresh());
+
+        $this->assertNull($resolved['level_name']);
+        $this->assertFalse($resolved['is_max_level']);
+        // 200 -> aucun palier atteint, en cours vers palier 1 (500) : 200/500 = 40%.
+        $this->assertSame(40, $resolved['percent_to_next']);
+        $this->assertSame('current', $resolved['tiers'][0]['status']);
+    }
 }
