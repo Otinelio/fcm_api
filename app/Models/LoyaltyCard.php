@@ -29,7 +29,7 @@ class LoyaltyCard extends Model
      * deux endroits, ce qui corrige le bug où `goal` ne se rafraîchissait
      * qu'au fetch initial, jamais en temps réel).
      */
-    protected $appends = ['goal', 'percent', 'level', 'cashback_available_fcfa'];
+    protected $appends = ['goal', 'percent', 'level', 'tiers', 'cashback_available_fcfa'];
 
     protected function casts(): array
     {
@@ -54,10 +54,28 @@ class LoyaltyCard extends Model
             return null;
         }
 
-        $service = app(\App\Services\Loyalty\RewardTierService::class);
+        $service = app(\App\Services\Loyalty\LoyaltyTierService::class);
         $tiers = $service->tiers($program);
 
-        return $service->spanFor($tiers, $service->completedCycles($this));
+        if (count($tiers) <= 1) {
+            // Mono-palier : comportement cycle répété inchangé — objectif
+            // constant, span du palier unique.
+            return $tiers[0]['goal'] ?? 10;
+        }
+
+        // Multi-palier : objectif = écart jusqu'au prochain palier non
+        // atteint (ou jusqu'au premier palier si aucun n'est encore atteint).
+        $resolved = $service->resolve($this);
+        $current = (float) ($this->progress['stamps_current'] ?? 0);
+        foreach ($tiers as $i => $tier) {
+            if ($tier['goal'] > $current) {
+                $previousGoal = $i > 0 ? $tiers[$i - 1]['goal'] : 0;
+
+                return $tier['goal'] - $previousGoal;
+            }
+        }
+
+        return null; // niveau max atteint, pas de palier suivant.
     }
 
     /**
@@ -116,8 +134,15 @@ class LoyaltyCard extends Model
             return 0;
         }
 
+        $service = app(\App\Services\Loyalty\LoyaltyTierService::class);
+        $tiers = $service->tiers($program);
+
         if ($program->type === 'cashback') {
-            return $this->level['percent_to_next'];
+            return $this->level['percent_to_next'] ?? 0;
+        }
+
+        if (count($tiers) > 1) {
+            return $this->level['percent_to_next'] ?? 100;
         }
 
         $goal = $this->goal;
@@ -130,10 +155,24 @@ class LoyaltyCard extends Model
         return (int) round(max(0, min(100, ($current / $goal) * 100)));
     }
 
-    /** Niveau de fidélité (indépendant des cycles/récompenses) — voir `LoyaltyLevelService`. */
-    public function getLevelAttribute(): array
+    /** Niveau de fidélité — `null` tant que le programme n'a qu'un seul palier configuré (voir `LoyaltyTierService`). */
+    public function getLevelAttribute(): ?array
     {
-        return app(\App\Services\Loyalty\LoyaltyLevelService::class)->levelFor($this);
+        $resolved = app(\App\Services\Loyalty\LoyaltyTierService::class)->resolve($this);
+
+        return $resolved['level_name'] === null && $resolved['tiers'] === []
+            ? null
+            : [
+                'name'            => $resolved['level_name'],
+                'percent_to_next' => $resolved['percent_to_next'],
+                'is_max_level'    => $resolved['is_max_level'],
+            ];
+    }
+
+    /** Roadmap des paliers (vide si un seul palier configuré) — pour la vue "progression" côté client. */
+    public function getTiersAttribute(): array
+    {
+        return app(\App\Services\Loyalty\LoyaltyTierService::class)->resolve($this)['tiers'];
     }
 
     protected static function booted(): void

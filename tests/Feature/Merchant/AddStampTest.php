@@ -281,43 +281,44 @@ class AddStampTest extends TestCase
         // 2 + 1 = 3 sur 5 -> 60%.
         $this->assertSame(5, $card->fresh()->goal);
         $this->assertSame(60, $card->fresh()->percent);
-        $this->assertSame('Membre', $card->fresh()->level['name']);
+        // Un seul palier configuré : pas de système de niveau affiché.
+        $this->assertNull($card->fresh()->level);
     }
 
-    public function test_level_progresses_with_lifetime_completed_cycles(): void
+    public function test_level_progresses_through_multi_tier_program(): void
     {
         [$restaurant, $token] = $this->restaurantWithToken();
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id,
             'name'          => 'Programme',
             'type'          => 'stamps',
-            'config'        => [
-                'goal'   => 1,
-                'levels' => [
-                    ['name' => 'Bronze', 'threshold' => 0],
-                    ['name' => 'Argent', 'threshold' => 2],
-                    ['name' => 'Or', 'threshold' => 4],
-                ],
-            ],
+            'config'        => [],
+        ]);
+        \App\Models\LoyaltyProgramTier::create([
+            'loyalty_program_id' => $program->id, 'order' => 1,
+            'goal' => 2, 'level_name' => 'Bronze', 'reward_description' => 'Café offert',
+        ]);
+        \App\Models\LoyaltyProgramTier::create([
+            'loyalty_program_id' => $program->id, 'order' => 2,
+            'goal' => 4, 'level_name' => 'Or', 'reward_description' => 'Menu offert',
         ]);
         $card = $this->cardFor($restaurant, $program);
+
+        // Avant le premier palier : pas encore de niveau.
+        $this->assertNull($card->fresh()->level['name']);
+
+        // 2 tampons -> palier Bronze atteint pile.
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson("/api/merchant/clients/{$card->id}/stamps")->assertOk();
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson("/api/merchant/clients/{$card->id}/stamps")->assertOk();
 
         $level = $card->fresh()->level;
         $this->assertSame('Bronze', $level['name']);
         $this->assertSame(0, $level['percent_to_next']);
         $this->assertFalse($level['is_max_level']);
 
-        // 2 cycles complétés -> palier Argent atteint pile.
-        $this->withHeader('Authorization', "Bearer {$token}")
-            ->postJson("/api/merchant/clients/{$card->id}/stamps")->assertOk();
-        $this->withHeader('Authorization', "Bearer {$token}")
-            ->postJson("/api/merchant/clients/{$card->id}/stamps")->assertOk();
-
-        $level = $card->fresh()->level;
-        $this->assertSame('Argent', $level['name']);
-        $this->assertSame(0, $level['percent_to_next']);
-
-        // 2 cycles de plus -> Or, niveau max.
+        // 2 tampons de plus -> Or, niveau max, plafonné (pas de second cycle).
         $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson("/api/merchant/clients/{$card->id}/stamps")->assertOk();
         $this->withHeader('Authorization', "Bearer {$token}")
