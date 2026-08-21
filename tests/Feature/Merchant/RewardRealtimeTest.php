@@ -148,8 +148,44 @@ class RewardRealtimeTest extends TestCase
         $this->assertSame('private-loyalty.' . $card->client_id, $channels[0]->name);
         $this->assertSame('loyalty.reward.updated', $event->broadcastAs());
         $this->assertSame(
-            ['id' => $reward->id, 'status' => 'available'],
+            [
+                'id'              => $reward->id,
+                'status'          => 'available',
+                'program_tier_id' => null,
+                'level_name'      => null,
+                'icon'            => null,
+            ],
             $event->broadcastWith()
         );
+    }
+
+    public function test_card_updated_broadcast_includes_tiers(): void
+    {
+        [$restaurant, $token] = $this->restaurantWithToken();
+        $program = \App\Models\LoyaltyProgram::create([
+            'restaurant_id' => $restaurant->id, 'name' => 'Programme', 'type' => 'stamps', 'config' => [],
+        ]);
+        \App\Models\LoyaltyProgramTier::create([
+            'loyalty_program_id' => $program->id, 'order' => 1,
+            'goal' => 2, 'level_name' => 'Bronze', 'reward_description' => 'Café offert',
+        ]);
+        \App\Models\LoyaltyProgramTier::create([
+            'loyalty_program_id' => $program->id, 'order' => 2,
+            'goal' => 4, 'level_name' => 'Or', 'reward_description' => 'Menu offert',
+        ]);
+        $card = $this->cardFor($restaurant, $program);
+
+        \Illuminate\Support\Facades\Event::fake([\App\Events\LoyaltyRewardUpdated::class]);
+
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson("/api/merchant/clients/{$card->id}/stamps")->assertOk();
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson("/api/merchant/clients/{$card->id}/stamps")->assertOk();
+
+        \Illuminate\Support\Facades\Event::assertDispatched(\App\Events\LoyaltyRewardUpdated::class, function ($event) {
+            $payload = $event->broadcastWith();
+
+            return $payload['level_name'] === 'Bronze' && $payload['icon'] === '🥉' && $payload['program_tier_id'] !== null;
+        });
     }
 }

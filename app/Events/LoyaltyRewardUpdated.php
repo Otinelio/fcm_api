@@ -45,9 +45,16 @@ class LoyaltyRewardUpdated implements ShouldBroadcast
 
     public function broadcastWith(): array
     {
+        $tier = $this->reward->programTier;
+
         return [
-            'id'     => $this->reward->id,
-            'status' => $this->reward->status,
+            'id'              => $this->reward->id,
+            'status'          => $this->reward->status,
+            'program_tier_id' => $this->reward->program_tier_id,
+            'level_name'      => $tier?->level_name,
+            'icon'            => $tier
+                ? app(\App\Services\Loyalty\LoyaltyTierService::class)->iconForRank($tier->order)
+                : null,
         ];
     }
 }

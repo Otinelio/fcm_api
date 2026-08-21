@@ -48,6 +48,7 @@ class LoyaltyCardUpdated implements ShouldBroadcast
             'goal'                  => $this->card->goal,
             'percent'               => $this->card->percent,
             'level'                 => $this->card->level,
+            'tiers'                 => $this->card->tiers,
         ];
     }
 }
