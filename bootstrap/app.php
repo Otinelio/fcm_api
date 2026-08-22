@@ -17,6 +17,9 @@ return Application::configure(basePath: dirname(__DIR__))
         ['prefix' => 'api', 'middleware' => ['api', 'auth:sanctum']],
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->alias([
+            'admin.only' => \App\Http\Middleware\EnsureAdmin::class,
+        ]);
         $middleware->validateCsrfTokens(except: [
             'api/webhooks/fedapay',
         ]);
