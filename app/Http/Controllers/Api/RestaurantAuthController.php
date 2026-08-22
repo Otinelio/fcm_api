@@ -57,7 +57,7 @@ class RestaurantAuthController extends Controller
             'message'          => 'Inscription réussie.',
             'access_token'     => $token,
             'token_type'       => 'Bearer',
-            'restaurant'       => $this->restaurantData($restaurant),
+            'restaurant'       => $this->restaurantData($restaurant, $request),
         ], 201);
     }
 
@@ -106,7 +106,7 @@ class RestaurantAuthController extends Controller
             'message'      => 'Connexion réussie.',
             'access_token' => $token,
             'token_type'   => 'Bearer',
-            'restaurant'   => $this->restaurantData($restaurant),
+            'restaurant'   => $this->restaurantData($restaurant, $request),
         ]);
     }
 
@@ -152,7 +152,7 @@ class RestaurantAuthController extends Controller
             'message'      => $isNew ? 'Compte créé via ' . $request->provider . '.' : 'Connexion réussie.',
             'access_token' => $token,
             'token_type'   => 'Bearer',
-            'restaurant'   => $this->restaurantData($restaurant),
+            'restaurant'   => $this->restaurantData($restaurant, $request),
         ], $isNew ? 201 : 200);
     }
 
@@ -177,7 +177,7 @@ class RestaurantAuthController extends Controller
 
         return response()->json([
             'message'    => 'Informations du commerce mises à jour.',
-            'restaurant' => $this->restaurantData($restaurant->fresh()),
+            'restaurant' => $this->restaurantData($restaurant->fresh(), $request),
         ]);
     }
 
@@ -211,7 +211,7 @@ class RestaurantAuthController extends Controller
 
         return response()->json([
             'message'    => 'Logo mis à jour.',
-            'restaurant' => $this->restaurantData($restaurant->fresh()),
+            'restaurant' => $this->restaurantData($restaurant->fresh(), $request),
         ]);
     }
 
@@ -228,7 +228,7 @@ class RestaurantAuthController extends Controller
 
         return response()->json([
             'message'    => 'Logo supprimé.',
-            'restaurant' => $this->restaurantData($restaurant->fresh()),
+            'restaurant' => $this->restaurantData($restaurant->fresh(), $request),
         ]);
     }
 
@@ -265,7 +265,7 @@ class RestaurantAuthController extends Controller
 
         return response()->json([
             'message'    => 'Formule mise à jour.',
-            'restaurant' => $this->restaurantData($restaurant->fresh()),
+            'restaurant' => $this->restaurantData($restaurant->fresh(), $request),
         ]);
     }
 
@@ -276,13 +276,13 @@ class RestaurantAuthController extends Controller
     /**
      * GET /api/auth/merchant/me
      */
-    public function me(): JsonResponse
+    public function me(Request $request): JsonResponse
     {
         /** @var Restaurant $restaurant */
         $restaurant = auth()->user();
 
         return response()->json([
-            'restaurant' => $this->restaurantData($restaurant),
+            'restaurant' => $this->restaurantData($restaurant, $request),
         ]);
     }
 
@@ -401,7 +401,7 @@ class RestaurantAuthController extends Controller
 
         return response()->json([
             'message'    => 'Préférences mises à jour.',
-            'restaurant' => $this->restaurantData($restaurant->fresh()),
+            'restaurant' => $this->restaurantData($restaurant->fresh(), $request),
         ]);
     }
 
@@ -474,56 +474,11 @@ class RestaurantAuthController extends Controller
     // Helpers privés
     // ─────────────────────────────────────────────────────────
 
-    private function restaurantData(Restaurant $restaurant): array
+    private function restaurantData(Restaurant $restaurant, Request $request): array
     {
         return [
-            'id'                => $restaurant->id,
-            'uuid'              => $restaurant->uuid,
-            'name'              => $restaurant->name,
-            'category'          => $restaurant->category,
-            'email'             => $restaurant->email,
-            'phone'             => $restaurant->phone,
-            'address'           => $restaurant->address,
-            'city'              => $restaurant->city,
-            'country'           => $restaurant->country,
-            'description'       => $restaurant->description,
-            'logo_url'          => $restaurant->logo_url,
-            'whatsapp'          => $restaurant->whatsapp,
-            'instagram'         => $restaurant->instagram,
-            'facebook'          => $restaurant->facebook,
-            'tiktok'            => $restaurant->tiktok,
-            'qr_token'          => $restaurant->qr_token,
-            'short_code'        => $restaurant->short_code,
-            'has_business_info'   => $restaurant->hasBusinessInfo(),
-            'latitude'            => $restaurant->location?->latitude,
-            'longitude'           => $restaurant->location?->longitude,
-            'has_location'        => $restaurant->hasLocation(),
-            'has_loyalty_program' => $restaurant->hasLoyaltyProgram(),
-            // Config du programme (couleurs, mode, objectif, style de tampon) :
-            // le dashboard marchand la rejoue telle quelle, sans second appel.
-            'loyalty_program'     => $restaurant->loyaltyProgram
-                ? [
-                    'type'   => $restaurant->loyaltyProgram->type,
-                    'config' => [
-                        ...$restaurant->loyaltyProgram->config ?? [],
-                        'loops' => $restaurant->loyaltyProgram->loops,
-                        'tiers' => $restaurant->loyaltyProgram->tiers->map(fn ($t) => [
-                            'goal'                => $t->goal,
-                            'level_name'          => $t->level_name,
-                            'reward_description'  => $t->reward_description,
-                            'reveal_reward'       => $t->reveal_reward,
-                            'validity_days'       => $t->validity_days,
-                        ])->all(),
-                    ],
-                ]
-                : null,
-            'plan'                => $restaurant->planSlug(),
-            'sms_credits'         => (int) $restaurant->sms_credits,
-            'notification_preferences' => [
-                ...self::DEFAULT_NOTIFICATION_PREFERENCES,
-                ...$restaurant->notification_preferences ?? [],
-            ],
-            'created_at'        => $restaurant->created_at?->toIso8601String(),
+            ...\App\Support\RestaurantPayload::build($restaurant),
+            'actor' => \App\Support\CurrentActor::resolve($request)->toArray(),
         ];
     }
 }
