@@ -49,6 +49,7 @@ class LoyaltyCardUpdated implements ShouldBroadcast
             'percent'               => $this->card->percent,
             'level'                 => $this->card->level,
             'tiers'                 => $this->card->tiers,
+            'next_reward'           => $this->card->next_reward,
         ];
     }
 }

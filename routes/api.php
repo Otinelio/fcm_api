@@ -68,6 +68,9 @@ Route::prefix('auth/merchant')->group(function () {
         Route::post('/profile/logo',   [RestaurantAuthController::class, 'uploadLogo'])->middleware('throttle:10,1');
         Route::delete('/profile/logo', [RestaurantAuthController::class, 'deleteLogo']);
         Route::put('/plan',      [RestaurantAuthController::class, 'updatePlan']);
+        Route::post('/verify-password', [RestaurantAuthController::class, 'verifyPassword']);
+        Route::put('/change-password',  [RestaurantAuthController::class, 'changePassword']);
+        Route::put('/notification-preferences', [RestaurantAuthController::class, 'updateNotificationPreferences']);
         Route::post('/logout',   [RestaurantAuthController::class, 'logout']);
     });
 });

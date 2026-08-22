@@ -102,6 +102,39 @@ class LoyaltyProgramCreationTest extends TestCase
         $this->assertSame(100, $program->config['fcfa_per_point']);
     }
 
+    public function test_tier_reveal_reward_defaults_to_true_when_absent(): void
+    {
+        [$restaurant, $token] = $this->restaurantWithToken();
+
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/loyalty-programs', [
+                'mode'  => 'stamps',
+                'tiers' => [['goal' => 8, 'reward_description' => 'Café offert']],
+                ...$this->baseVisuals,
+            ])->assertCreated();
+
+        $this->assertTrue($restaurant->fresh()->loyaltyProgram->tiers->first()->reveal_reward);
+    }
+
+    public function test_only_the_tier_marked_as_surprise_gets_reveal_reward_disabled(): void
+    {
+        [$restaurant, $token] = $this->restaurantWithToken();
+
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/loyalty-programs', [
+                'mode'  => 'stamps',
+                'tiers' => [
+                    ['goal' => 500, 'level_name' => 'Découverte', 'reward_description' => 'Boisson offerte'],
+                    ['goal' => 1000, 'level_name' => 'VIP', 'reward_description' => 'Menu surprise', 'reveal_reward' => false],
+                ],
+                ...$this->baseVisuals,
+            ])->assertCreated();
+
+        $tiers = $restaurant->fresh()->loyaltyProgram->tiers->sortBy('order')->values();
+        $this->assertTrue($tiers[0]->reveal_reward);
+        $this->assertFalse($tiers[1]->reveal_reward);
+    }
+
     public function test_stamps_program_still_works_unchanged(): void
     {
         [$restaurant, $token] = $this->restaurantWithToken();

@@ -25,6 +25,14 @@ use MatanYadaev\EloquentSpatial\Objects\Point;
 
 class RestaurantAuthController extends Controller
 {
+    private const DEFAULT_NOTIFICATION_PREFERENCES = [
+        'new_client'    => true,
+        'reward'        => true,
+        'low_sms'       => true,
+        'weekly_report' => false,
+        'promotions'    => false,
+    ];
+
     public function __construct(
         private readonly SocialAuthService $socialAuth,
     ) {}
@@ -294,6 +302,110 @@ class RestaurantAuthController extends Controller
     }
 
     // ─────────────────────────────────────────────────────────
+    // Change Password (authenticated) — mirror ClientAuthController
+    // ─────────────────────────────────────────────────────────
+
+    /**
+     * POST /api/auth/merchant/verify-password
+     *
+     * Vérifie que le mot de passe fourni correspond bien au mot de passe
+     * actuel. Utilisé comme première étape du flux de changement de mot de
+     * passe.
+     */
+    public function verifyPassword(Request $request): JsonResponse
+    {
+        $request->validate([
+            'current_password' => 'required|string',
+        ]);
+
+        /** @var Restaurant $restaurant */
+        $restaurant = $request->user();
+
+        if (! Hash::check($request->current_password, $restaurant->password)) {
+            return response()->json([
+                'message' => 'Le mot de passe est incorrect.',
+                'valid'   => false,
+            ], 422);
+        }
+
+        return response()->json([
+            'message' => 'Mot de passe vérifié.',
+            'valid'   => true,
+        ]);
+    }
+
+    /**
+     * PUT /api/auth/merchant/change-password
+     *
+     * Permet au marchand connecté de modifier son mot de passe.
+     * Requiert : current_password, password, password_confirmation.
+     */
+    public function changePassword(Request $request): JsonResponse
+    {
+        $request->validate([
+            'current_password' => 'required|string',
+            'password'         => 'required|string|min:8|confirmed',
+        ]);
+
+        /** @var Restaurant $restaurant */
+        $restaurant = $request->user();
+
+        if (! Hash::check($request->current_password, $restaurant->password)) {
+            return response()->json([
+                'message' => 'Le mot de passe actuel est incorrect.',
+            ], 422);
+        }
+
+        if (Hash::check($request->password, $restaurant->password)) {
+            return response()->json([
+                'message' => 'Le nouveau mot de passe doit être différent de l\'actuel.',
+            ], 422);
+        }
+
+        $restaurant->update([
+            'password' => Hash::make($request->password),
+        ]);
+
+        return response()->json([
+            'message' => 'Votre mot de passe a été modifié avec succès.',
+        ]);
+    }
+
+    /**
+     * PUT /api/auth/merchant/notification-preferences
+     *
+     * Clés acceptées : `new_client`, `reward`, `low_sms`, `weekly_report`,
+     * `promotions` (voir `notifications_screen.dart`) — seules celles
+     * envoyées sont modifiées, les autres gardent leur valeur actuelle.
+     */
+    public function updateNotificationPreferences(Request $request): JsonResponse
+    {
+        $request->validate([
+            'new_client'    => ['sometimes', 'boolean'],
+            'reward'        => ['sometimes', 'boolean'],
+            'low_sms'       => ['sometimes', 'boolean'],
+            'weekly_report' => ['sometimes', 'boolean'],
+            'promotions'    => ['sometimes', 'boolean'],
+        ]);
+
+        /** @var Restaurant $restaurant */
+        $restaurant = $request->user();
+
+        $restaurant->update([
+            'notification_preferences' => [
+                ...self::DEFAULT_NOTIFICATION_PREFERENCES,
+                ...$restaurant->notification_preferences ?? [],
+                ...$request->only(array_keys(self::DEFAULT_NOTIFICATION_PREFERENCES)),
+            ],
+        ]);
+
+        return response()->json([
+            'message'    => 'Préférences mises à jour.',
+            'restaurant' => $this->restaurantData($restaurant->fresh()),
+        ]);
+    }
+
+    // ─────────────────────────────────────────────────────────
     // Password Recovery (OTP, même mécanisme que ClientAuthController)
     // ─────────────────────────────────────────────────────────
 
@@ -394,10 +506,12 @@ class RestaurantAuthController extends Controller
                     'type'   => $restaurant->loyaltyProgram->type,
                     'config' => [
                         ...$restaurant->loyaltyProgram->config ?? [],
+                        'loops' => $restaurant->loyaltyProgram->loops,
                         'tiers' => $restaurant->loyaltyProgram->tiers->map(fn ($t) => [
                             'goal'                => $t->goal,
                             'level_name'          => $t->level_name,
                             'reward_description'  => $t->reward_description,
+                            'reveal_reward'       => $t->reveal_reward,
                             'validity_days'       => $t->validity_days,
                         ])->all(),
                     ],
@@ -405,6 +519,10 @@ class RestaurantAuthController extends Controller
                 : null,
             'plan'                => $restaurant->planSlug(),
             'sms_credits'         => (int) $restaurant->sms_credits,
+            'notification_preferences' => [
+                ...self::DEFAULT_NOTIFICATION_PREFERENCES,
+                ...$restaurant->notification_preferences ?? [],
+            ],
             'created_at'        => $restaurant->created_at?->toIso8601String(),
         ];
     }

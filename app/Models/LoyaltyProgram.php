@@ -14,6 +14,7 @@ class LoyaltyProgram extends Model
         'name',
         'type', // stamp, points, cashback, vip
         'is_active',
+        'loops',
         'config',
     ];
 
@@ -21,6 +22,7 @@ class LoyaltyProgram extends Model
     {
         return [
             'is_active' => 'boolean',
+            'loops'     => 'boolean',
             'config'    => 'array',
         ];
     }

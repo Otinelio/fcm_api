@@ -35,6 +35,7 @@ class LoyaltyProgramController extends Controller
                     'name'      => $restaurant->name ?? 'Programme de fidélité',
                     'type'      => $data['mode'],
                     'is_active' => true,
+                    'loops'     => $data['loops'] ?? true,
                     'config'    => [
                         'reward_validity_days'    => $data['reward_validity_days'] ?? null,
                         'show_review_button'      => $data['show_review_button'] ?? false,
@@ -76,6 +77,7 @@ class LoyaltyProgramController extends Controller
                         'goal'                => (int) $tier['goal'],
                         'level_name'          => $tier['level_name'] ?? null,
                         'reward_description'  => $tier['reward_description'],
+                        'reveal_reward'       => $tier['reveal_reward'] ?? true,
                         'validity_days'       => $tier['validity_days'] ?? null,
                     ],
                 );

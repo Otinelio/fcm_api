@@ -309,6 +309,15 @@ class MerchantDashboardController extends Controller
             ], 422);
         }
 
+        // Indépendant du plafond configurable (`cashback_redeem_cap_percent`,
+        // optionnel) : cette règle s'applique toujours, même sans plafond
+        // défini — le cashback utilisé ne réduit jamais l'achat sous zéro.
+        if ($redeemAmount > $amountFcfa) {
+            return response()->json([
+                'message' => 'Le cashback utilisé ne peut pas dépasser le montant de l\'achat.',
+            ], 422);
+        }
+
         $capPercent = $program->config['cashback_redeem_cap_percent'] ?? null;
         if ($capPercent !== null) {
             $maxAllowed = round($amountFcfa * ((float) $capPercent) / 100, 2);
@@ -388,41 +397,88 @@ class MerchantDashboardController extends Controller
         $tierService = app(LoyaltyTierService::class);
         $tiers = $tierService->tiers($program);
 
+        if ($loyaltyCard->completed_at !== null) {
+            return response()->json([
+                'message' => 'Ce programme est terminé pour cette carte : aucune nouvelle progression n\'est possible.',
+            ], 422);
+        }
+
         $progress = $loyaltyCard->progress ?? [];
         $before = (int) ($progress['stamps_current'] ?? 0);
+        $loops = (bool) $program->loops;
 
-        $unlockedTiers = []; // [['reward_description' => string, 'validity_days' => ?int, 'id' => ?int], ...]
-        if (count($tiers) <= 1) {
-            // Mono-palier : comportement cycle répété inchangé — un gros
-            // achat peut franchir l'objectif plusieurs fois d'un coup, le
-            // reste est conservé pour le nouveau cycle plutôt que perdu.
-            $goal = $tiers[0]['goal'] ?? 10;
-            $current = $before + $earned;
-            while ($current >= $goal) {
-                $current -= $goal;
-                $unlockedTiers[] = $tiers[0];
+        // Objectif du dernier palier = largeur d'un cycle complet, valable
+        // pour 1 ou N paliers (remplace l'ancien branchement sur le nombre
+        // de paliers : c'est désormais `loops` qui pilote reset vs plafond).
+        $cycleGoal = count($tiers) > 0 ? $tiers[count($tiers) - 1]['goal'] : null;
+
+        $unlockedTiers = []; // [['reward_description' => string, 'validity_days' => ?int, 'id' => ?int, 'order' => int, 'level_name' => ?string], ...]
+        $fullCyclesCompleted = 0;
+        $cardCompleted = false;
+        $current = $before + $earned;
+
+        if ($cycleGoal !== null) {
+            if ($loops) {
+                // Boucle : consomme le cycle courant puis wrap à 0 — un
+                // gros gain peut franchir plusieurs cycles d'un coup.
+                $cursor = $before;
+                $target = $before + $earned;
+                while ($target >= $cycleGoal) {
+                    $unlockedTiers = array_merge($unlockedTiers, $this->crossedTiers($tiers, $cursor, $cycleGoal));
+                    $fullCyclesCompleted++;
+                    $target -= $cycleGoal;
+                    $cursor = 0;
+                }
+                $unlockedTiers = array_merge($unlockedTiers, $this->crossedTiers($tiers, $cursor, $target));
+                $current = $target;
+            } else {
+                // Cycle unique : plafonné au dernier palier, la carte se
+                // termine dès qu'il est atteint.
+                $rawTarget = $before + $earned;
+                $current = min($rawTarget, $cycleGoal);
+                $unlockedTiers = $this->crossedTiers($tiers, $before, $current);
+                if ($rawTarget >= $cycleGoal) {
+                    $cardCompleted = true;
+                    $fullCyclesCompleted = 1;
+                }
             }
-        } else {
-            // Multi-palier : cumulatif à vie, jamais reset, plafonné.
-            $current = $before + $earned;
-            $unlockedTiers = $this->crossedTiers($tiers, $before, $current);
         }
+
         $cyclesCompleted = count($unlockedTiers);
         $rewardUnlocked = $cyclesCompleted > 0;
-        $isMonoTier = count($tiers) <= 1;
+
+        // Niveau max historique — uniquement pour le multi-palier (le
+        // mono-palier n'a pas de notion de "niveau", voir LoyaltyTierService)
+        // — jamais rétrogradé, indépendant d'un futur reset de cycle.
+        $maxLevelUpdate = [];
+        if (count($tiers) > 1 && $unlockedTiers !== []) {
+            $best = collect($unlockedTiers)->sortByDesc('order')->first();
+            if ($best !== null && (int) $loyaltyCard->max_level_order < (int) $best['order']) {
+                $maxLevelUpdate = [
+                    'max_level_name'       => $best['level_name'],
+                    'max_level_order'      => $best['order'],
+                    'max_level_reached_at' => now(),
+                ];
+            }
+        }
 
         $restaurantId = $restaurant->id;
         $createdRewardIds = [];
 
         DB::transaction(function () use (
-            $loyaltyCard, $progress, $current, $rewardUnlocked, $unlockedTiers, $isMonoTier,
+            $loyaltyCard, $progress, $current, $rewardUnlocked, $unlockedTiers,
+            $cardCompleted, $fullCyclesCompleted, $cycleGoal, $maxLevelUpdate,
             $earned, $amountFcfa, $restaurantId, &$createdRewardIds,
         ) {
-            $loyaltyCard->update([
-                'progress'         => array_merge($progress, ['stamps_current' => $current]),
-                'status'           => $rewardUnlocked ? 'reward_available' : 'active',
-                'last_activity_at' => now(),
-            ]);
+            $loyaltyCard->update(array_merge(
+                [
+                    'progress'         => array_merge($progress, ['stamps_current' => $current]),
+                    'status'           => $rewardUnlocked ? 'reward_available' : 'active',
+                    'last_activity_at' => now(),
+                ],
+                $cardCompleted ? ['completed_at' => now()] : [],
+                $maxLevelUpdate,
+            ));
 
             DB::table('loyalty_transactions')->insert([
                 'loyalty_card_id'        => $loyaltyCard->id,
@@ -435,26 +491,22 @@ class MerchantDashboardController extends Controller
                 'updated_at'             => now(),
             ]);
 
-            foreach ($unlockedTiers as $tier) {
-                // Mono-palier uniquement : signal historique conservé pour
-                // byte-identicité avec le comportement d'avant (plus aucun
-                // code ne le consomme — `LoyaltyTierService::tiers()` lit
-                // directement `progress['stamps_current']`/la table de
-                // paliers). Le multi-palier n'en a jamais eu besoin : il ne
-                // connaît pas de "cycle" à signaler, la métrique cumulative
-                // ne reset jamais.
-                if ($isMonoTier) {
-                    DB::table('loyalty_transactions')->insert([
-                        'loyalty_card_id'   => $loyaltyCard->id,
-                        'type'              => 'cycle_completed',
-                        'value'             => $tier['goal'],
-                        'validation_method' => 'merchant_app',
-                        'status'            => 'valid',
-                        'created_at'        => now(),
-                        'updated_at'        => now(),
-                    ]);
-                }
+            // Signal historique de fin de cycle — vaut aussi bien pour un
+            // mono-palier (boucle) que pour un multi-palier (boucle ou
+            // dernier cycle unique) désormais.
+            for ($i = 0; $i < $fullCyclesCompleted; $i++) {
+                DB::table('loyalty_transactions')->insert([
+                    'loyalty_card_id'   => $loyaltyCard->id,
+                    'type'              => 'cycle_completed',
+                    'value'             => $cycleGoal,
+                    'validation_method' => 'merchant_app',
+                    'status'            => 'valid',
+                    'created_at'        => now(),
+                    'updated_at'        => now(),
+                ]);
+            }
 
+            foreach ($unlockedTiers as $tier) {
                 $reward = \App\Models\LoyaltyReward::create([
                     'loyalty_card_id' => $loyaltyCard->id,
                     'restaurant_id'   => $restaurantId,
@@ -482,17 +534,19 @@ class MerchantDashboardController extends Controller
         }
 
         $message = match (true) {
+            $cardCompleted && $cyclesCompleted > 0 => 'Dernier palier atteint : programme terminé pour cette carte !',
             $cyclesCompleted > 1 => "{$cyclesCompleted} récompenses débloquées !",
             $cyclesCompleted === 1 => 'Récompense débloquée !',
             default => $isSpendMode ? "{$earned} point(s) accordé(s)." : 'Tampon accordé.',
         };
 
         return response()->json([
-            'message'               => $message,
-            'reward_unlocked'       => $rewardUnlocked,
+            'message'                => $message,
+            'reward_unlocked'        => $rewardUnlocked,
             'rewards_unlocked_count' => $cyclesCompleted,
-            'points_earned'         => $earned,
-            'client'                => $this->cardData($freshCard),
+            'points_earned'          => $earned,
+            'program_completed'      => $cardCompleted,
+            'client'                 => $this->cardData($freshCard),
         ]);
     }
 
@@ -677,6 +731,11 @@ class MerchantDashboardController extends Controller
             'status'           => $card->status,
             'level'            => $card->level,
             'reward_available' => $card->status === 'reward_available',
+            'program_completed' => $card->completed_at !== null,
+            'max_level'        => $card->max_level_name ? [
+                'name'        => $card->max_level_name,
+                'reached_at'  => $card->max_level_reached_at?->toIso8601String(),
+            ] : null,
             'last_activity_at' => $card->last_activity_at?->toIso8601String(),
             'created_at'       => $card->created_at?->toIso8601String(),
             'client'           => $card->client ? [

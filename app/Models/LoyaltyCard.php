@@ -20,6 +20,10 @@ class LoyaltyCard extends Model
         'vip_tier',
         'status',
         'last_activity_at',
+        'completed_at',
+        'max_level_name',
+        'max_level_order',
+        'max_level_reached_at',
     ];
 
     /**
@@ -29,7 +33,7 @@ class LoyaltyCard extends Model
      * deux endroits, ce qui corrige le bug où `goal` ne se rafraîchissait
      * qu'au fetch initial, jamais en temps réel).
      */
-    protected $appends = ['goal', 'percent', 'level', 'tiers', 'cashback_available_fcfa'];
+    protected $appends = ['goal', 'percent', 'level', 'tiers', 'cashback_available_fcfa', 'next_reward'];
 
     protected function casts(): array
     {
@@ -37,6 +41,8 @@ class LoyaltyCard extends Model
             'progress'              => 'array',
             'cashback_balance_fcfa' => 'decimal:2',
             'last_activity_at'      => 'datetime',
+            'completed_at'          => 'datetime',
+            'max_level_reached_at'  => 'datetime',
         ];
     }
 
@@ -173,6 +179,18 @@ class LoyaltyCard extends Model
     public function getTiersAttribute(): array
     {
         return app(\App\Services\Loyalty\LoyaltyTierService::class)->resolve($this)['tiers'];
+    }
+
+    /**
+     * Palier (objectif + récompense réelle) vers lequel la carte progresse,
+     * pas encore débloqué — permet à l'écran carte d'afficher la vraie
+     * récompense visée (au lieu d'un texte générique) tant qu'aucune
+     * `LoyaltyReward` n'existe encore, y compris pour un mono-palier (qui
+     * n'a pas de roadmap de niveau, voir `tiers`).
+     */
+    public function getNextRewardAttribute(): ?array
+    {
+        return app(\App\Services\Loyalty\LoyaltyTierService::class)->nextReward($this);
     }
 
     protected static function booted(): void

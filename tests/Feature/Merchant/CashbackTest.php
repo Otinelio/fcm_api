@@ -170,6 +170,31 @@ class CashbackTest extends TestCase
         $this->assertSame('1000.00', $card->fresh()->cashback_balance_fcfa);
     }
 
+    public function test_redeem_always_rejects_amount_above_purchase_even_without_configured_cap(): void
+    {
+        [$restaurant, $token] = $this->restaurantWithToken();
+        $program = LoyaltyProgram::create([
+            'restaurant_id' => $restaurant->id,
+            'name'          => 'Programme',
+            'type'          => 'cashback',
+            'config'        => ['cashback_percentage' => 5],
+        ]);
+        $card = $this->cardFor($restaurant, $program);
+        $card->update(['cashback_balance_fcfa' => 5000]);
+
+        // Pas de plafond configuré, mais la règle "cashback ≤ achat" reste
+        // absolue : achat 1 000, cashback demandé 1 500, solde suffisant.
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson("/api/merchant/clients/{$card->id}/redeem-cashback", [
+                'amount_fcfa'        => 1000,
+                'redeem_amount_fcfa' => 1500,
+            ]);
+
+        $response->assertStatus(422);
+        $response->assertJson(['message' => 'Le cashback utilisé ne peut pas dépasser le montant de l\'achat.']);
+        $this->assertSame('5000.00', $card->fresh()->cashback_balance_fcfa);
+    }
+
     public function test_redeem_without_configured_cap_is_only_limited_by_balance(): void
     {
         [$restaurant, $token] = $this->restaurantWithToken();

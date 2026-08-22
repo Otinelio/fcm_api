@@ -21,15 +21,38 @@ use Illuminate\Support\Facades\DB;
 class LoyaltyTierService
 {
     private const ICONS = ['🥉', '🥈', '🥇', '💎', '👑'];
-    private const DEFAULT_ICON = '⭐';
 
-    public function iconForRank(int $rank): string
+    /**
+     * Icône du palier `$rank` (1-based) parmi `$totalTiers` paliers du
+     * programme. Mise à l'échelle sur la plage `self::ICONS` de sorte que le
+     * dernier palier du programme obtienne toujours l'icône maximale (👑),
+     * quel que soit le nombre de paliers configurés — un programme à 2
+     * paliers va directement de 🥉 à 👑, sans s'arrêter à 🥈.
+     */
+    public function iconForRank(int $rank, int $totalTiers): string
     {
-        return self::ICONS[$rank - 1] ?? self::DEFAULT_ICON;
+        $maxIndex = count(self::ICONS) - 1;
+
+        $index = $totalTiers <= 1
+            ? $maxIndex
+            : (int) round((($rank - 1) / ($totalTiers - 1)) * $maxIndex);
+
+        return self::ICONS[$index] ?? self::ICONS[$maxIndex];
     }
 
     /**
-     * @return array<int, array{id: ?int, order: int, goal: int, level_name: ?string, reward_description: string, validity_days: ?int}>
+     * Vide `reward_description` quand ce palier précis n'est pas encore
+     * débloqué et que le marchand le masque (`tier.reveal_reward === false`,
+     * réglage propre à chaque palier — un programme peut cacher un seul
+     * palier "surprise" et laisser les autres visibles).
+     */
+    private function redact(array $tier): array
+    {
+        return ($tier['reveal_reward'] ?? true) ? $tier : [...$tier, 'reward_description' => ''];
+    }
+
+    /**
+     * @return array<int, array{id: ?int, order: int, goal: int, level_name: ?string, reward_description: string, reveal_reward: bool, validity_days: ?int}>
      * Trié par `goal` croissant.
      */
     public function tiers(?LoyaltyProgram $program): array
@@ -49,6 +72,7 @@ class LoyaltyTierService
                     'goal'                => max(1, (int) $r->goal),
                     'level_name'          => $r->level_name,
                     'reward_description'  => $r->reward_description,
+                    'reveal_reward'       => $r->reveal_reward,
                     'validity_days'       => $r->validity_days ?? ($program->config['reward_validity_days'] ?? null),
                 ])
                 ->all();
@@ -72,8 +96,44 @@ class LoyaltyTierService
             'goal'               => max(1, $goal),
             'level_name'         => null,
             'reward_description' => $title,
+            'reveal_reward'      => true,
             'validity_days'      => $program->config['reward_validity_days'] ?? null,
         ]];
+    }
+
+    /**
+     * Palier vers lequel la carte progresse actuellement (pas encore
+     * atteint) — sert d'aperçu tant qu'aucune `LoyaltyReward` n'est encore
+     * débloquée (voir `LoyaltyCard::getNextRewardAttribute`). Contrairement à
+     * `resolve()['tiers']`, jamais vide pour un mono-palier : c'est
+     * justement le seul cas où ce champ a un rôle (pas de roadmap de niveau
+     * pour montrer la récompense visée).
+     *
+     * @return array{goal: int, level_name: ?string, reward_description: string, icon: string}|null
+     */
+    public function nextReward(LoyaltyCard $card): ?array
+    {
+        $tiers = $this->tiers($card->loyaltyProgram);
+        if ($tiers === []) {
+            return null;
+        }
+
+        if (count($tiers) === 1) {
+            return [...$this->redact($tiers[0]), 'icon' => '🎁'];
+        }
+
+        $metric = $this->lifetimeMetric($card);
+        $totalTiers = count($tiers);
+
+        foreach ($tiers as $i => $tier) {
+            if ($tier['goal'] > $metric) {
+                return [...$this->redact($tier), 'icon' => $this->iconForRank($i + 1, $totalTiers)];
+            }
+        }
+
+        // Tous les paliers sont atteints : aperçu du dernier (le max), déjà
+        // débloqué en réalité — jamais masqué, quel que soit le réglage.
+        return [...$tiers[$totalTiers - 1], 'icon' => $this->iconForRank($totalTiers, $totalTiers)];
     }
 
     public function lifetimeCashback(LoyaltyCard $card): float
@@ -120,12 +180,28 @@ class LoyaltyTierService
             }
         }
 
-        $tiersWithStatus = collect($tiers)->values()->map(function ($tier, $i) use ($metric, $next) {
-            $status = $tier['goal'] <= $metric
+        // Paliers déjà débloqués au moins une fois pour cette carte (une
+        // vraie `LoyaltyReward` existe) — un reset de cycle (`loops=true`)
+        // ne remet à zéro que la progression courante, jamais l'historique
+        // des récompenses déjà accordées : ces paliers restent "reached" et
+        // ne se refont jamais masquer, même si la métrique du nouveau cycle
+        // ne les couvre plus.
+        $everUnlockedTierIds = DB::table('loyalty_rewards')
+            ->where('loyalty_card_id', $card->id)
+            ->whereNotNull('program_tier_id')
+            ->pluck('program_tier_id')
+            ->all();
+
+        $totalTiers = count($tiers);
+        $tiersWithStatus = collect($tiers)->values()->map(function ($tier, $i) use ($metric, $next, $totalTiers, $everUnlockedTierIds) {
+            $alreadyUnlocked = $tier['id'] !== null && in_array($tier['id'], $everUnlockedTierIds, true);
+            $status = ($tier['goal'] <= $metric || $alreadyUnlocked)
                 ? 'reached'
                 : ($next !== null && $tier['order'] === $next['order'] ? 'current' : 'upcoming');
 
-            return [...$tier, 'icon' => $this->iconForRank($i + 1), 'status' => $status];
+            $tier = $status === 'reached' ? $tier : $this->redact($tier);
+
+            return [...$tier, 'icon' => $this->iconForRank($i + 1, $totalTiers), 'status' => $status];
         })->all();
 
         if ($current === null) {

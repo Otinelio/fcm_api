@@ -292,6 +292,7 @@ class AddStampTest extends TestCase
             'restaurant_id' => $restaurant->id,
             'name'          => 'Programme',
             'type'          => 'stamps',
+            'loops'         => false, // cycle unique : reste plafonné au dernier palier
             'config'        => [],
         ]);
         \App\Models\LoyaltyProgramTier::create([
@@ -333,7 +334,8 @@ class AddStampTest extends TestCase
     {
         [$restaurant, $token] = $this->restaurantWithToken();
         $program = LoyaltyProgram::create([
-            'restaurant_id' => $restaurant->id, 'name' => 'Programme', 'type' => 'stamps', 'config' => [],
+            'restaurant_id' => $restaurant->id, 'name' => 'Programme', 'type' => 'stamps',
+            'loops' => false, 'config' => [],
         ]);
         \App\Models\LoyaltyProgramTier::create([
             'loyalty_program_id' => $program->id, 'order' => 1,
@@ -367,14 +369,16 @@ class AddStampTest extends TestCase
         $r4 = $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson("/api/merchant/clients/{$card->id}/stamps");
         $r4->assertJsonPath('rewards_unlocked_count', 1);
+        $r4->assertJsonPath('program_completed', true);
         $this->assertSame(2, \App\Models\LoyaltyReward::where('loyalty_card_id', $card->id)->count());
+        $this->assertNotNull($card->fresh()->completed_at);
 
-        // 5e tampon : plus aucun palier à débloquer (plafonné, pas de second cycle).
+        // 5e tampon : programme terminé (cycle unique), plus aucune progression possible.
         $r5 = $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson("/api/merchant/clients/{$card->id}/stamps");
-        $r5->assertJsonPath('rewards_unlocked_count', 0);
+        $r5->assertStatus(422);
         $this->assertSame(2, \App\Models\LoyaltyReward::where('loyalty_card_id', $card->id)->count());
-        $this->assertSame(5, $card->fresh()->progress['stamps_current']);
+        $this->assertSame(4, $card->fresh()->progress['stamps_current']);
     }
 
     public function test_multi_tier_goal_attribute_exposes_absolute_next_threshold_not_a_span(): void

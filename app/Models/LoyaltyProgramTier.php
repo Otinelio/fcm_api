@@ -12,7 +12,12 @@ class LoyaltyProgramTier extends Model
         'goal',
         'level_name',
         'reward_description',
+        'reveal_reward',
         'validity_days',
+    ];
+
+    protected $casts = [
+        'reveal_reward' => 'boolean',
     ];
 
     public function loyaltyProgram()

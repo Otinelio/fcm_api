@@ -64,9 +64,16 @@ class StoreLoyaltyProgramRequest extends FormRequest
             'tiers.*.goal'                => ['required', 'integer', 'min:1', 'max:1000000'],
             'tiers.*.level_name'          => ['nullable', 'string', 'max:100'],
             'tiers.*.reward_description'  => ['required', 'string', 'max:255'],
+            // Récompense "surprise" propre à ce palier — `false` = contenu
+            // masqué côté client jusqu'au déblocage réel. Défaut `true`.
+            'tiers.*.reveal_reward'       => ['sometimes', 'boolean'],
             // Durée de validité propre à ce palier — `null` = utilise
             // `reward_validity_days` (valeur par défaut du programme).
             'tiers.*.validity_days'       => ['nullable', 'integer', 'min:1', 'max:3650'],
+            // Comportement après le dernier palier : `true` = nouveau cycle
+            // automatique (progression repart à 0, récompense déjà
+            // débloquée conservée) ; `false` = carte terminée définitivement.
+            'loops'                   => ['sometimes', 'boolean'],
             // Durée de validité d'une récompense débloquée, en jours.
             // `null`/absent = pas d'expiration.
             'reward_validity_days'    => ['nullable', 'integer', 'min:1', 'max:3650'],

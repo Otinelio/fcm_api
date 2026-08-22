@@ -44,6 +44,7 @@ class Restaurant extends Authenticatable
         'location',
         'sms_credits',
         'short_code',
+        'notification_preferences',
     ];
 
     protected $hidden = [
@@ -55,6 +56,7 @@ class Restaurant extends Authenticatable
         return [
             'password' => 'hashed',
             'location' => Point::class,
+            'notification_preferences' => 'array',
         ];
     }
 
