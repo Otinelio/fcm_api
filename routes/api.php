@@ -11,6 +11,7 @@ use App\Http\Controllers\LoyaltyController;
 use App\Http\Controllers\Api\RewardAckController;
 use App\Http\Controllers\Api\ClientAuthController;
 use App\Http\Controllers\Api\RestaurantAuthController;
+use App\Http\Controllers\Api\StaffAuthController;
 use App\Http\Controllers\Api\LoyaltyProgramController;
 use App\Http\Controllers\Api\LoyaltyCardController;
 use App\Http\Controllers\Api\LoyaltyRewardController;
@@ -55,6 +56,7 @@ Route::prefix('auth/merchant')->group(function () {
     Route::post('/register', [RestaurantAuthController::class, 'register'])->middleware('throttle:5,1');
     Route::post('/login',    [RestaurantAuthController::class, 'login'])->middleware('throttle:5,1');
     Route::post('/social',   [RestaurantAuthController::class, 'socialLogin']);
+    Route::post('/staff/login', [StaffAuthController::class, 'login'])->middleware('throttle:5,1');
 
     // Password Recovery
     Route::post('/forgot-password', [RestaurantAuthController::class, 'forgotPassword']);
