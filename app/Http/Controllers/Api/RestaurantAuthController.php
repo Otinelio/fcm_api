@@ -318,10 +318,10 @@ class RestaurantAuthController extends Controller
             'current_password' => 'required|string',
         ]);
 
-        /** @var Restaurant $restaurant */
-        $restaurant = $request->user();
+        $actor = \App\Support\CurrentActor::resolve($request);
+        $hashed = $actor->staffUser?->password ?? $request->user()->password;
 
-        if (! Hash::check($request->current_password, $restaurant->password)) {
+        if (! Hash::check($request->current_password, $hashed)) {
             return response()->json([
                 'message' => 'Le mot de passe est incorrect.',
                 'valid'   => false,
@@ -347,24 +347,22 @@ class RestaurantAuthController extends Controller
             'password'         => 'required|string|min:8|confirmed',
         ]);
 
-        /** @var Restaurant $restaurant */
-        $restaurant = $request->user();
+        $actor = \App\Support\CurrentActor::resolve($request);
+        $target = $actor->staffUser ?? $request->user();
 
-        if (! Hash::check($request->current_password, $restaurant->password)) {
+        if (! Hash::check($request->current_password, $target->password)) {
             return response()->json([
                 'message' => 'Le mot de passe actuel est incorrect.',
             ], 422);
         }
 
-        if (Hash::check($request->password, $restaurant->password)) {
+        if (Hash::check($request->password, $target->password)) {
             return response()->json([
                 'message' => 'Le nouveau mot de passe doit être différent de l\'actuel.',
             ], 422);
         }
 
-        $restaurant->update([
-            'password' => Hash::make($request->password),
-        ]);
+        $target->update(['password' => Hash::make($request->password)]);
 
         return response()->json([
             'message' => 'Votre mot de passe a été modifié avec succès.',
