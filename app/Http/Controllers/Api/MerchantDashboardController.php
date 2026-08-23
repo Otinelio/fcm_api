@@ -189,11 +189,12 @@ class MerchantDashboardController extends Controller
         $percentage = (float) ($program->config['cashback_percentage'] ?? 0);
         $earnedFcfa = round($amountFcfa * $percentage / 100, 2);
 
+        $staffUserId = \App\Support\CurrentActor::resolve($request)->staffUser?->id;
         $restaurantId = $restaurant->id;
         $createdRewardIds = [];
 
         DB::transaction(function () use (
-            $loyaltyCard, $earnedFcfa, $amountFcfa, $tiers, $metricBefore, $restaurantId, &$createdRewardIds,
+            $loyaltyCard, $earnedFcfa, $amountFcfa, $tiers, $metricBefore, $restaurantId, $staffUserId, &$createdRewardIds,
         ) {
             $loyaltyCard->update([
                 'cashback_balance_fcfa' => $loyaltyCard->cashback_balance_fcfa + $earnedFcfa,
@@ -207,6 +208,7 @@ class MerchantDashboardController extends Controller
                 'montant_commande_fcfa' => $amountFcfa,
                 'validation_method'     => 'merchant_app',
                 'status'                => 'valid',
+                'staff_user_id'         => $staffUserId,
                 'created_at'            => now(),
                 'updated_at'            => now(),
             ]);
@@ -328,6 +330,8 @@ class MerchantDashboardController extends Controller
             }
         }
 
+        $staffUserId = \App\Support\CurrentActor::resolve($request)->staffUser?->id;
+
         $lock = Cache::lock("redeem-cashback:{$loyaltyCard->id}", 5);
         if (! $lock->get()) {
             return response()->json([
@@ -336,7 +340,7 @@ class MerchantDashboardController extends Controller
         }
 
         try {
-            DB::transaction(function () use ($loyaltyCard, $redeemAmount, $amountFcfa) {
+            DB::transaction(function () use ($loyaltyCard, $redeemAmount, $amountFcfa, $staffUserId) {
                 $loyaltyCard->update([
                     'cashback_balance_fcfa' => $loyaltyCard->cashback_balance_fcfa - $redeemAmount,
                     'last_activity_at'      => now(),
@@ -349,6 +353,7 @@ class MerchantDashboardController extends Controller
                     'montant_commande_fcfa' => $amountFcfa,
                     'validation_method'     => 'merchant_app',
                     'status'                => 'valid',
+                    'staff_user_id'         => $staffUserId,
                     'created_at'            => now(),
                     'updated_at'            => now(),
                 ]);
@@ -462,13 +467,14 @@ class MerchantDashboardController extends Controller
             }
         }
 
+        $staffUserId = \App\Support\CurrentActor::resolve($request)->staffUser?->id;
         $restaurantId = $restaurant->id;
         $createdRewardIds = [];
 
         DB::transaction(function () use (
             $loyaltyCard, $progress, $current, $rewardUnlocked, $unlockedTiers,
             $cardCompleted, $fullCyclesCompleted, $cycleGoal, $maxLevelUpdate,
-            $earned, $amountFcfa, $restaurantId, &$createdRewardIds,
+            $earned, $amountFcfa, $restaurantId, $staffUserId, &$createdRewardIds,
         ) {
             $loyaltyCard->update(array_merge(
                 [
@@ -487,6 +493,7 @@ class MerchantDashboardController extends Controller
                 'montant_commande_fcfa'  => $amountFcfa,
                 'validation_method'      => 'merchant_app',
                 'status'                 => 'valid',
+                'staff_user_id'          => $staffUserId,
                 'created_at'             => now(),
                 'updated_at'             => now(),
             ]);
@@ -601,8 +608,9 @@ class MerchantDashboardController extends Controller
             }
 
             $loyaltyReward->update([
-                'status'  => 'used',
-                'used_at' => now(),
+                'status'               => 'used',
+                'used_at'              => now(),
+                'used_by_staff_user_id' => \App\Support\CurrentActor::resolve($request)->staffUser?->id,
             ]);
         } finally {
             $lock->release();
@@ -634,9 +642,10 @@ class MerchantDashboardController extends Controller
         $request->validate(['reason' => ['nullable', 'string', 'max:255']]);
 
         $loyaltyReward->update([
-            'status'        => 'canceled',
-            'canceled_at'   => now(),
-            'cancel_reason' => $request->input('reason'),
+            'status'                    => 'canceled',
+            'canceled_at'               => now(),
+            'cancel_reason'             => $request->input('reason'),
+            'canceled_by_staff_user_id' => \App\Support\CurrentActor::resolve($request)->staffUser?->id,
         ]);
 
         $freshReward = $loyaltyReward->fresh()->load('loyaltyCard.client');
