@@ -371,6 +371,54 @@ class MerchantDashboardController extends Controller
         ]);
     }
 
+    /**
+     * GET /api/merchant/clients/{loyaltyCard}/history
+     *
+     * Historique consultable par l'admin ET l'opérateur (contrairement à
+     * `/merchant/clients` en liste, réservé admin) — voir spec équipe.
+     */
+    public function clientHistory(Request $request, LoyaltyCard $loyaltyCard): JsonResponse
+    {
+        $this->authorizeCard($request, $loyaltyCard);
+
+        $entries = DB::table('loyalty_transactions')
+            ->leftJoin('staff_users', 'staff_users.id', '=', 'loyalty_transactions.staff_user_id')
+            ->where('loyalty_transactions.loyalty_card_id', $loyaltyCard->id)
+            ->whereIn('loyalty_transactions.type', ['stamp', 'cashback_earn', 'cashback_redeem'])
+            ->where('loyalty_transactions.status', 'valid')
+            ->orderByDesc('loyalty_transactions.created_at')
+            ->orderByDesc('loyalty_transactions.id')
+            ->limit(100)
+            ->get([
+                'loyalty_transactions.type',
+                'loyalty_transactions.value',
+                'loyalty_transactions.montant_commande_fcfa',
+                'loyalty_transactions.created_at',
+                'staff_users.name as staff_name',
+                'staff_users.role as staff_role',
+            ]);
+
+        $numeric = function ($value) {
+            if ($value === null) {
+                return null;
+            }
+            $float = (float) $value;
+
+            return floor($float) == $float ? (int) $float : $float;
+        };
+
+        $history = $entries->map(fn ($row) => [
+            'type'                  => $row->type,
+            'value'                 => $numeric($row->value),
+            'montant_commande_fcfa' => $numeric($row->montant_commande_fcfa),
+            'created_at'            => $row->created_at,
+            'staff_name'            => $row->staff_name,
+            'staff_role'            => $row->staff_role,
+        ]);
+
+        return response()->json(['history' => $history]);
+    }
+
     private function grantStampOrPoints(
         Request $request,
         Restaurant $restaurant,
