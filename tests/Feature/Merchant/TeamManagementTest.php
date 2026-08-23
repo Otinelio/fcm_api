@@ -133,6 +133,16 @@ class TeamManagementTest extends TestCase
         ]);
         $operatorToken = $restaurant->createToken("staff:{$staff->id}", ["staff:{$staff->id}"])->plainTextToken;
 
+        // Un second opérateur, actif lui aussi, dont le token ne doit pas
+        // être touché par la désactivation de Jean — c'est ce qui prouve
+        // que le filtre de révocation cible uniquement `staff:{$staff->id}`
+        // et ne purge pas tous les tokens du restaurant.
+        $otherStaff = StaffUser::create([
+            'restaurant_id' => $restaurant->id, 'name' => 'Paul',
+            'email' => 'paul3@example.com', 'password' => bcrypt('operatorpass'), 'role' => 'operator',
+        ]);
+        $otherOperatorToken = $restaurant->createToken("staff:{$otherStaff->id}", ["staff:{$otherStaff->id}"])->plainTextToken;
+
         // L'opérateur peut travailler avant la désactivation.
         $this->withHeader('Authorization', "Bearer {$operatorToken}")
             ->getJson('/api/auth/merchant/me')
@@ -156,6 +166,18 @@ class TeamManagementTest extends TestCase
         $this->withHeader('Authorization', "Bearer {$operatorToken}")
             ->getJson('/api/auth/merchant/me')
             ->assertStatus(401);
+
+        // Ni le token de l'admin qui a fait l'action, ni celui d'un autre
+        // opérateur actif, ne doivent avoir été révoqués au passage.
+        $this->app['auth']->forgetGuards();
+        $this->withHeader('Authorization', "Bearer {$adminToken}")
+            ->getJson('/api/auth/merchant/me')
+            ->assertOk();
+
+        $this->app['auth']->forgetGuards();
+        $this->withHeader('Authorization', "Bearer {$otherOperatorToken}")
+            ->getJson('/api/auth/merchant/me')
+            ->assertOk();
     }
 
     // Comble un trou de couverture laissé par la Task 4 (le middleware
