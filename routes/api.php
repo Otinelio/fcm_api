@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\LoyaltyCardController;
 use App\Http\Controllers\Api\LoyaltyRewardController;
 use App\Http\Controllers\Api\MerchantCampaignController;
 use App\Http\Controllers\Api\MerchantDashboardController;
+use App\Http\Controllers\Api\TeamController;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Auth routes (clients mobiles)
@@ -73,6 +74,10 @@ Route::prefix('auth/merchant')->group(function () {
         Route::post('/verify-password', [RestaurantAuthController::class, 'verifyPassword']);
         Route::put('/change-password',  [RestaurantAuthController::class, 'changePassword']);
         Route::put('/notification-preferences', [RestaurantAuthController::class, 'updateNotificationPreferences'])->middleware('admin.only');
+        Route::get('/team',                          [TeamController::class, 'index'])->middleware('admin.only');
+        Route::post('/team',                          [TeamController::class, 'store'])->middleware('admin.only');
+        Route::put('/team/{staffUser}',                [TeamController::class, 'update'])->middleware('admin.only');
+        Route::patch('/team/{staffUser}/toggle-active', [TeamController::class, 'toggleActive'])->middleware('admin.only');
         Route::post('/logout',   [RestaurantAuthController::class, 'logout']);
     });
 });
