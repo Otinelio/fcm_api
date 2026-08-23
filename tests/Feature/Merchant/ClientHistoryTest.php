@@ -43,6 +43,10 @@ class ClientHistoryTest extends TestCase
         $this->withHeader('Authorization', "Bearer {$operatorToken}")
             ->postJson("/api/merchant/clients/{$card->id}/stamps", [])
             ->assertOk();
+
+        // Sanctum RequestGuard caches the user; need to purge before switching actors
+        $this->app['auth']->forgetGuards();
+
         $this->withHeader('Authorization', "Bearer {$adminToken}")
             ->postJson("/api/merchant/clients/{$card->id}/stamps", [])
             ->assertOk();
