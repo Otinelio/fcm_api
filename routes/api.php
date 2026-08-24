@@ -65,7 +65,7 @@ Route::prefix('auth/merchant')->group(function () {
     Route::post('/reset-password',  [RestaurantAuthController::class, 'resetPassword']);
 
     // Routes protégées (token Sanctum requis)
-    Route::middleware('auth:sanctum')->group(function () {
+    Route::middleware(['auth:sanctum', 'staff.active'])->group(function () {
         Route::get('/me',        [RestaurantAuthController::class, 'me']);
         Route::put('/profile',   [RestaurantAuthController::class, 'updateBusinessInfo'])->middleware('admin.only');
         Route::post('/profile/logo',   [RestaurantAuthController::class, 'uploadLogo'])->middleware(['throttle:10,1', 'admin.only']);
@@ -86,7 +86,7 @@ Route::prefix('auth/merchant')->group(function () {
 Route::middleware(['auth:sanctum', 'admin.only'])->post('/loyalty-programs', [LoyaltyProgramController::class, 'store']);
 
 // Dashboard marchand (clientèle, validation, statistiques, campagnes)
-Route::middleware('auth:sanctum')->prefix('merchant')->group(function () {
+Route::middleware(['auth:sanctum', 'staff.active'])->prefix('merchant')->group(function () {
     Route::get('/stats',                    [MerchantDashboardController::class, 'stats'])->middleware('admin.only');
     Route::get('/clients',                  [MerchantDashboardController::class, 'clients'])->middleware('admin.only');
     Route::get('/clients/lookup',           [MerchantDashboardController::class, 'lookup']);
@@ -140,7 +140,7 @@ use App\Http\Controllers\PaymentController;
 
 // Profil utilisateur : nom + solde de points de fidélité
 Route::middleware('auth:sanctum')->group(function () {
-    Route::post('/subscriptions/{plan}/pay', [PaymentController::class, 'initSubscriptionPayment']);
+    Route::post('/subscriptions/{plan}/pay', [PaymentController::class, 'initSubscriptionPayment'])->middleware('admin.only');
     Route::get('/profile', function (Request $request) {
         $user = $request->user();
         return response()->json([

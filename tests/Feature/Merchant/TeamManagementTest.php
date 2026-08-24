@@ -180,6 +180,55 @@ class TeamManagementTest extends TestCase
             ->assertOk();
     }
 
+    public function test_resetting_a_staff_password_revokes_their_existing_token(): void
+    {
+        [$restaurant, $adminToken] = $this->adminToken();
+        $staff = StaffUser::create([
+            'restaurant_id' => $restaurant->id, 'name' => 'Jean',
+            'email' => 'jean4@example.com', 'password' => bcrypt('oldpass'), 'role' => 'operator',
+        ]);
+        $operatorToken = $restaurant->createToken("staff:{$staff->id}", ["staff:{$staff->id}"])->plainTextToken;
+
+        // L'ancien token fonctionne avant la réinitialisation.
+        $this->withHeader('Authorization', "Bearer {$operatorToken}")
+            ->getJson('/api/auth/merchant/me')
+            ->assertOk();
+
+        $this->app['auth']->forgetGuards();
+        $this->withHeader('Authorization', "Bearer {$adminToken}")
+            ->putJson("/api/auth/merchant/team/{$staff->id}", ['password' => 'brandnewpass'])
+            ->assertOk();
+
+        // Le mot de passe a bien changé...
+        $this->assertTrue(\Illuminate\Support\Facades\Hash::check('brandnewpass', $staff->fresh()->password));
+
+        // ...et l'ancien token, potentiellement compromis, ne doit plus
+        // fonctionner.
+        $this->app['auth']->forgetGuards();
+        $this->withHeader('Authorization', "Bearer {$operatorToken}")
+            ->getJson('/api/auth/merchant/me')
+            ->assertStatus(401);
+    }
+
+    public function test_updating_a_staff_member_without_a_password_does_not_revoke_their_token(): void
+    {
+        [$restaurant, $adminToken] = $this->adminToken();
+        $staff = StaffUser::create([
+            'restaurant_id' => $restaurant->id, 'name' => 'Jean',
+            'email' => 'jean5@example.com', 'password' => bcrypt('oldpass'), 'role' => 'operator',
+        ]);
+        $operatorToken = $restaurant->createToken("staff:{$staff->id}", ["staff:{$staff->id}"])->plainTextToken;
+
+        $this->withHeader('Authorization', "Bearer {$adminToken}")
+            ->putJson("/api/auth/merchant/team/{$staff->id}", ['name' => 'Jean Dupont'])
+            ->assertOk();
+
+        $this->app['auth']->forgetGuards();
+        $this->withHeader('Authorization', "Bearer {$operatorToken}")
+            ->getJson('/api/auth/merchant/me')
+            ->assertOk();
+    }
+
     // Comble un trou de couverture laissé par la Task 4 (le middleware
     // admin.only avait été testé avant que cette route existe) : un
     // opérateur ne doit pas pouvoir lister l'équipe.

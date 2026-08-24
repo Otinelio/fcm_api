@@ -25,7 +25,14 @@ final class CurrentActor
                 $staffId = (int) substr($ability, strlen('staff:'));
                 $staffUser = StaffUser::find($staffId);
 
-                if ($staffUser === null || ! $staffUser->is_active) {
+                // Invariant central du modèle : le token appartient au
+                // Restaurant ($user ici), pas au StaffUser lui-même. On
+                // vérifie donc explicitement que le membre trouvé appartient
+                // bien à ce Restaurant, et pas seulement qu'il existe et est
+                // actif — défensif, l'ability "staff:{id}" n'est aujourd'hui
+                // émise que par StaffAuthController, toujours correctement
+                // scopée.
+                if ($staffUser === null || ! $staffUser->is_active || $staffUser->restaurant_id !== $user->id) {
                     throw new StaffUserInactiveException();
                 }
 

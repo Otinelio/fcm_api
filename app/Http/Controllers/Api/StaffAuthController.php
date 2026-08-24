@@ -47,12 +47,14 @@ class StaffAuthController extends Controller
         return response()->json([
             'access_token' => $token,
             'token_type'   => 'Bearer',
-            'restaurant'   => RestaurantPayload::build($restaurant),
-            'actor'        => [
-                'type' => 'staff',
-                'id'   => $staffUser->id,
-                'name' => $staffUser->name,
-                'role' => $staffUser->role,
+            'restaurant'   => [
+                ...RestaurantPayload::build($restaurant),
+                'actor' => [
+                    'type' => 'staff',
+                    'id'   => $staffUser->id,
+                    'name' => $staffUser->name,
+                    'role' => $staffUser->role,
+                ],
             ],
         ]);
     }

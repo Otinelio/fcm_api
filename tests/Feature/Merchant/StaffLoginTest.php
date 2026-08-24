@@ -35,9 +35,10 @@ class StaffLoginTest extends TestCase
         ]);
 
         $response->assertOk();
-        $response->assertJsonPath('actor.type', 'staff');
-        $response->assertJsonPath('actor.role', 'operator');
-        $response->assertJsonPath('actor.name', 'Jean');
+        $response->assertJsonPath('restaurant.actor.type', 'staff');
+        $response->assertJsonPath('restaurant.actor.role', 'operator');
+        $response->assertJsonPath('restaurant.actor.name', 'Jean');
+        $this->assertArrayNotHasKey('actor', $response->json());
         $response->assertJsonPath('restaurant.name', 'Chez Awa');
         $this->assertNotEmpty($response->json('access_token'));
     }

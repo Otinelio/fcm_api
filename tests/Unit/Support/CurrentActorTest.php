@@ -99,6 +99,35 @@ class CurrentActorTest extends TestCase
         CurrentActor::resolve($request);
     }
 
+    public function test_staff_ability_scoped_to_a_different_restaurant_is_rejected(): void
+    {
+        // Aujourd'hui, seul StaffAuthController émet des abilities "staff:*",
+        // toujours correctement scopées au bon Restaurant — ce scénario
+        // n'est donc pas exploitable en pratique. On le construit ici
+        // directement (token émis "à la main" par un autre Restaurant) pour
+        // vérifier que CurrentActor ne fait pas confiance à l'ability seule :
+        // le StaffUser trouvé doit aussi appartenir au Restaurant du token.
+        $restaurantA = $this->restaurant();
+        $staffOfA = StaffUser::create([
+            'restaurant_id' => $restaurantA->id, 'name' => 'Jean',
+            'email' => 'jean@example.com', 'password' => 'secret', 'role' => 'operator',
+        ]);
+
+        $restaurantB = Restaurant::create([
+            'name' => 'Autre Resto', 'category' => 'Restaurant',
+            'email' => 'autre@example.com', 'password' => bcrypt('secret123'),
+        ]);
+        // Token émis par B, portant l'ability du membre de A.
+        $token = $restaurantB->createToken("staff:{$staffOfA->id}", ["staff:{$staffOfA->id}"])->accessToken;
+
+        $request = Request::create('/');
+        $restaurantB->withAccessToken($token);
+        $request->setUserResolver(fn () => $restaurantB);
+
+        $this->expectException(StaffUserInactiveException::class);
+        CurrentActor::resolve($request);
+    }
+
     public function test_no_authenticated_user_defaults_to_admin(): void
     {
         $request = Request::create('/');

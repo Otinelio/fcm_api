@@ -76,7 +76,7 @@ class TeamController extends Controller
      */
     public function update(Request $request, StaffUser $staffUser): JsonResponse
     {
-        $this->authorizeStaff($request, $staffUser);
+        $restaurant = $this->authorizeStaff($request, $staffUser);
 
         $request->validate([
             'name'     => ['sometimes', 'string', 'max:150'],
@@ -91,6 +91,13 @@ class TeamController extends Controller
         }
 
         $staffUser->update($data);
+
+        if ($request->filled('password')) {
+            // Un mot de passe réinitialisé (ex : compromission suspectée)
+            // doit invalider tout token déjà émis pour ce membre, sinon
+            // l'ancien token reste utilisable malgré le changement.
+            $this->revokeStaffTokens($restaurant, $staffUser);
+        }
 
         return response()->json(['message' => 'Membre mis à jour.']);
     }
@@ -107,12 +114,7 @@ class TeamController extends Controller
         $staffUser->update(['is_active' => $request->boolean('is_active')]);
 
         if (! $staffUser->is_active) {
-            // Les tokens appartiennent au Restaurant (voir CurrentActor) : on
-            // révoque uniquement ceux portant l'ability de ce membre précis.
-            $restaurant->tokens()
-                ->get()
-                ->filter(fn ($token) => in_array("staff:{$staffUser->id}", $token->abilities ?? [], true))
-                ->each(fn ($token) => $token->delete());
+            $this->revokeStaffTokens($restaurant, $staffUser);
         }
 
         return response()->json([
@@ -128,5 +130,18 @@ class TeamController extends Controller
         abort_if($staffUser->restaurant_id !== $restaurant->id, 404);
 
         return $restaurant;
+    }
+
+    /**
+     * Les tokens appartiennent au Restaurant (voir CurrentActor) : on
+     * révoque uniquement ceux portant l'ability de ce membre précis, pas
+     * tous les tokens du restaurant.
+     */
+    private function revokeStaffTokens(Restaurant $restaurant, StaffUser $staffUser): void
+    {
+        $restaurant->tokens()
+            ->get()
+            ->filter(fn ($token) => in_array("staff:{$staffUser->id}", $token->abilities ?? [], true))
+            ->each(fn ($token) => $token->delete());
     }
 }

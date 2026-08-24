@@ -95,4 +95,25 @@ class AdminOnlyMiddlewareTest extends TestCase
             ->getJson('/api/merchant/stats')
             ->assertOk();
     }
+
+    // Facturation : même catégorie que PUT /auth/merchant/plan, déjà
+    // admin-only — un opérateur ne doit pas pouvoir déclencher un paiement
+    // d'abonnement.
+    //
+    // NB : on vérifie la présence du middleware sur la route plutôt qu'un
+    // aller-retour HTTP complet. PaymentController::initSubscriptionPayment
+    // type-hint encore App\Models\SubscriptionPlan (table `subscription_plans`),
+    // supprimée lors de la consolidation Postgres (commit 333dd5d) au profit
+    // de `plans` — cette route répond donc déjà 500 pour n'importe quel
+    // compte, admin y compris (vérifié manuellement). C'est un bug
+    // préexistant, sans rapport avec les rôles équipe et hors périmètre de
+    // cette branche ; seul l'ajout de admin.only en relève.
+    public function test_subscription_payment_route_requires_admin(): void
+    {
+        $route = collect(\Illuminate\Support\Facades\Route::getRoutes())
+            ->first(fn ($r) => $r->uri() === 'api/subscriptions/{plan}/pay' && in_array('POST', $r->methods(), true));
+
+        $this->assertNotNull($route, 'Route POST /api/subscriptions/{plan}/pay introuvable.');
+        $this->assertContains('admin.only', $route->gatherMiddleware());
+    }
 }
