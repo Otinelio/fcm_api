@@ -11,11 +11,13 @@ use App\Http\Controllers\LoyaltyController;
 use App\Http\Controllers\Api\RewardAckController;
 use App\Http\Controllers\Api\ClientAuthController;
 use App\Http\Controllers\Api\RestaurantAuthController;
+use App\Http\Controllers\Api\StaffAuthController;
 use App\Http\Controllers\Api\LoyaltyProgramController;
 use App\Http\Controllers\Api\LoyaltyCardController;
 use App\Http\Controllers\Api\LoyaltyRewardController;
 use App\Http\Controllers\Api\MerchantCampaignController;
 use App\Http\Controllers\Api\MerchantDashboardController;
+use App\Http\Controllers\Api\TeamController;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Auth routes (clients mobiles)
@@ -55,6 +57,7 @@ Route::prefix('auth/merchant')->group(function () {
     Route::post('/register', [RestaurantAuthController::class, 'register'])->middleware('throttle:5,1');
     Route::post('/login',    [RestaurantAuthController::class, 'login'])->middleware('throttle:5,1');
     Route::post('/social',   [RestaurantAuthController::class, 'socialLogin']);
+    Route::post('/staff/login', [StaffAuthController::class, 'login'])->middleware('throttle:5,1');
 
     // Password Recovery
     Route::post('/forgot-password', [RestaurantAuthController::class, 'forgotPassword']);
@@ -62,28 +65,33 @@ Route::prefix('auth/merchant')->group(function () {
     Route::post('/reset-password',  [RestaurantAuthController::class, 'resetPassword']);
 
     // Routes protégées (token Sanctum requis)
-    Route::middleware('auth:sanctum')->group(function () {
+    Route::middleware(['auth:sanctum', 'staff.active'])->group(function () {
         Route::get('/me',        [RestaurantAuthController::class, 'me']);
-        Route::put('/profile',   [RestaurantAuthController::class, 'updateBusinessInfo']);
-        Route::post('/profile/logo',   [RestaurantAuthController::class, 'uploadLogo'])->middleware('throttle:10,1');
-        Route::delete('/profile/logo', [RestaurantAuthController::class, 'deleteLogo']);
-        Route::put('/plan',      [RestaurantAuthController::class, 'updatePlan']);
+        Route::put('/profile',   [RestaurantAuthController::class, 'updateBusinessInfo'])->middleware('admin.only');
+        Route::post('/profile/logo',   [RestaurantAuthController::class, 'uploadLogo'])->middleware(['throttle:10,1', 'admin.only']);
+        Route::delete('/profile/logo', [RestaurantAuthController::class, 'deleteLogo'])->middleware('admin.only');
+        Route::put('/plan',      [RestaurantAuthController::class, 'updatePlan'])->middleware('admin.only');
         Route::post('/verify-password', [RestaurantAuthController::class, 'verifyPassword']);
         Route::put('/change-password',  [RestaurantAuthController::class, 'changePassword']);
-        Route::put('/notification-preferences', [RestaurantAuthController::class, 'updateNotificationPreferences']);
+        Route::put('/notification-preferences', [RestaurantAuthController::class, 'updateNotificationPreferences'])->middleware('admin.only');
+        Route::get('/team',                          [TeamController::class, 'index'])->middleware('admin.only');
+        Route::post('/team',                          [TeamController::class, 'store'])->middleware('admin.only');
+        Route::put('/team/{staffUser}',                [TeamController::class, 'update'])->middleware('admin.only');
+        Route::patch('/team/{staffUser}/toggle-active', [TeamController::class, 'toggleActive'])->middleware('admin.only');
         Route::post('/logout',   [RestaurantAuthController::class, 'logout']);
     });
 });
 
 // Programme de fidélité (step2/3 de l'onboarding marchand)
-Route::middleware('auth:sanctum')->post('/loyalty-programs', [LoyaltyProgramController::class, 'store']);
+Route::middleware(['auth:sanctum', 'admin.only'])->post('/loyalty-programs', [LoyaltyProgramController::class, 'store']);
 
 // Dashboard marchand (clientèle, validation, statistiques, campagnes)
-Route::middleware('auth:sanctum')->prefix('merchant')->group(function () {
-    Route::get('/stats',                    [MerchantDashboardController::class, 'stats']);
-    Route::get('/clients',                  [MerchantDashboardController::class, 'clients']);
+Route::middleware(['auth:sanctum', 'staff.active'])->prefix('merchant')->group(function () {
+    Route::get('/stats',                    [MerchantDashboardController::class, 'stats'])->middleware('admin.only');
+    Route::get('/clients',                  [MerchantDashboardController::class, 'clients'])->middleware('admin.only');
     Route::get('/clients/lookup',           [MerchantDashboardController::class, 'lookup']);
     Route::get('/clients/{loyaltyCard}',    [MerchantDashboardController::class, 'showClient']);
+    Route::get('/clients/{loyaltyCard}/history', [MerchantDashboardController::class, 'clientHistory']);
     Route::post('/clients/{loyaltyCard}/stamps', [MerchantDashboardController::class, 'addStamp']);
     Route::post('/clients/{loyaltyCard}/redeem-cashback', [MerchantDashboardController::class, 'redeemCashback']);
 
@@ -91,9 +99,9 @@ Route::middleware('auth:sanctum')->prefix('merchant')->group(function () {
     Route::post('/rewards/{loyaltyReward}/redeem', [MerchantDashboardController::class, 'redeemReward']);
     Route::post('/rewards/{loyaltyReward}/cancel', [MerchantDashboardController::class, 'cancelReward']);
 
-    Route::get('/campaigns',            [MerchantCampaignController::class, 'index']);
-    Route::get('/campaigns/recipients', [MerchantCampaignController::class, 'recipients']);
-    Route::post('/campaigns',           [MerchantCampaignController::class, 'store']);
+    Route::get('/campaigns',            [MerchantCampaignController::class, 'index'])->middleware('admin.only');
+    Route::get('/campaigns/recipients', [MerchantCampaignController::class, 'recipients'])->middleware('admin.only');
+    Route::post('/campaigns',           [MerchantCampaignController::class, 'store'])->middleware('admin.only');
 });
 
 Route::middleware('auth:sanctum')->prefix('loyalty-cards')->group(function () {
@@ -132,7 +140,7 @@ use App\Http\Controllers\PaymentController;
 
 // Profil utilisateur : nom + solde de points de fidélité
 Route::middleware('auth:sanctum')->group(function () {
-    Route::post('/subscriptions/{plan}/pay', [PaymentController::class, 'initSubscriptionPayment']);
+    Route::post('/subscriptions/{plan}/pay', [PaymentController::class, 'initSubscriptionPayment'])->middleware('admin.only');
     Route::get('/profile', function (Request $request) {
         $user = $request->user();
         return response()->json([
