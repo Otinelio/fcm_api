@@ -36,3 +36,4 @@ Thumbs.db
 .code-review-graph/
 .claude/settings.local.json
 /.worktrees/
+.worktrees/
