@@ -2,8 +2,11 @@
 
 namespace Tests\Feature\Merchant;
 
+use App\Models\Client;
+use App\Models\LoyaltyCard;
 use App\Models\Restaurant;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 /**
@@ -17,9 +20,9 @@ class LoyaltyProgramCreationTest extends TestCase
     private function restaurantWithToken(): array
     {
         $restaurant = Restaurant::create([
-            'name'     => 'Chez Awa',
+            'name' => 'Chez Awa',
             'category' => 'Restaurant',
-            'email'    => 'commerce@example.com',
+            'email' => 'commerce@example.com',
             'password' => bcrypt('password123'),
         ]);
         $token = $restaurant->createToken('merchant-app')->plainTextToken;
@@ -28,8 +31,8 @@ class LoyaltyProgramCreationTest extends TestCase
     }
 
     private array $baseVisuals = [
-        'color_primary'     => '#4F46E5',
-        'color_secondary'   => '#3730A3',
+        'color_primary' => '#4F46E5',
+        'color_secondary' => '#3730A3',
         'stamp_design_type' => 'check',
     ];
 
@@ -54,9 +57,9 @@ class LoyaltyProgramCreationTest extends TestCase
 
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson('/api/loyalty-programs', [
-                'mode'                         => 'cashback',
-                'cashback_percentage'          => 5,
-                'cashback_redeem_cap_percent'  => 50,
+                'mode' => 'cashback',
+                'cashback_percentage' => 5,
+                'cashback_redeem_cap_percent' => 50,
                 ...$this->baseVisuals,
             ]);
 
@@ -88,11 +91,11 @@ class LoyaltyProgramCreationTest extends TestCase
 
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson('/api/loyalty-programs', [
-                'mode'            => 'spend',
-                'tiers'           => [
+                'mode' => 'spend',
+                'tiers' => [
                     ['goal' => 500, 'reward_description' => 'Café offert'],
                 ],
-                'fcfa_per_point'  => 100,
+                'fcfa_per_point' => 100,
                 ...$this->baseVisuals,
             ]);
 
@@ -108,7 +111,7 @@ class LoyaltyProgramCreationTest extends TestCase
 
         $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson('/api/loyalty-programs', [
-                'mode'  => 'stamps',
+                'mode' => 'stamps',
                 'tiers' => [['goal' => 8, 'reward_description' => 'Café offert']],
                 ...$this->baseVisuals,
             ])->assertCreated();
@@ -122,7 +125,7 @@ class LoyaltyProgramCreationTest extends TestCase
 
         $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson('/api/loyalty-programs', [
-                'mode'  => 'stamps',
+                'mode' => 'stamps',
                 'tiers' => [
                     ['goal' => 500, 'level_name' => 'Découverte', 'reward_description' => 'Boisson offerte'],
                     ['goal' => 1000, 'level_name' => 'VIP', 'reward_description' => 'Menu surprise', 'reveal_reward' => false],
@@ -141,7 +144,7 @@ class LoyaltyProgramCreationTest extends TestCase
 
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson('/api/loyalty-programs', [
-                'mode'  => 'stamps',
+                'mode' => 'stamps',
                 'tiers' => [
                     ['goal' => 8, 'reward_description' => 'Café offert'],
                 ],
@@ -158,7 +161,7 @@ class LoyaltyProgramCreationTest extends TestCase
 
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson('/api/loyalty-programs', [
-                'mode'  => 'stamps',
+                'mode' => 'stamps',
                 'tiers' => [
                     ['goal' => 500, 'level_name' => 'Découverte', 'reward_description' => 'Boisson offerte'],
                     ['goal' => 1000, 'level_name' => 'Habitué', 'reward_description' => 'Dessert offert'],
@@ -179,7 +182,7 @@ class LoyaltyProgramCreationTest extends TestCase
 
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson('/api/loyalty-programs', [
-                'mode'  => 'stamps',
+                'mode' => 'stamps',
                 'tiers' => [
                     ['goal' => 1000, 'level_name' => 'A', 'reward_description' => 'X'],
                     ['goal' => 500, 'level_name' => 'B', 'reward_description' => 'Y'],
@@ -209,5 +212,60 @@ class LoyaltyProgramCreationTest extends TestCase
         $program = $restaurant->fresh()->loyaltyProgram;
         $this->assertSame(1, $program->tiers()->count());
         $this->assertSame(20, $program->tiers->first()->goal);
+    }
+
+    public function test_cannot_change_mode_while_cards_exist(): void
+    {
+        [$restaurant, $token] = $this->restaurantWithToken();
+        $this->withHeader('Authorization', "Bearer {$token}")->postJson('/api/loyalty-programs', [
+            'mode' => 'stamps',
+            'tiers' => [['goal' => 10, 'level_name' => null, 'reward_description' => 'Café']],
+            ...$this->baseVisuals,
+        ])->assertCreated();
+
+        $client = Client::create([
+            'uuid' => (string) Str::uuid(),
+            'first_name' => 'Afi', 'last_name' => 'Mensah',
+            'phone' => '+22890000099', 'password' => bcrypt('password123'),
+        ]);
+        LoyaltyCard::create([
+            'client_id' => $client->id,
+            'restaurant_id' => $restaurant->id,
+            'loyalty_program_id' => $restaurant->fresh()->loyaltyProgram->id,
+            'card_code' => 'CARD0001',
+            'qr_token' => (string) Str::uuid(),
+            'progress' => ['stamps_current' => 3],
+        ]);
+
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/loyalty-programs', [
+                'mode' => 'cashback',
+                'cashback_percentage' => 5,
+                ...$this->baseVisuals,
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('message', 'Impossible de changer le type de programme : des clients ont déjà une carte de fidélité.');
+        $this->assertSame('stamps', $restaurant->fresh()->loyaltyProgram->type);
+    }
+
+    public function test_mode_can_change_when_no_cards_exist(): void
+    {
+        [$restaurant, $token] = $this->restaurantWithToken();
+        $this->withHeader('Authorization', "Bearer {$token}")->postJson('/api/loyalty-programs', [
+            'mode' => 'stamps',
+            'tiers' => [['goal' => 10, 'level_name' => null, 'reward_description' => 'Café']],
+            ...$this->baseVisuals,
+        ])->assertCreated();
+
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/loyalty-programs', [
+                'mode' => 'spend',
+                'tiers' => [['goal' => 500, 'reward_description' => 'Dessert']],
+                ...$this->baseVisuals,
+            ])
+            ->assertCreated();
+
+        $this->assertSame('spend', $restaurant->fresh()->loyaltyProgram->type);
     }
 }
