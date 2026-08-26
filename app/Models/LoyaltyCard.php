@@ -22,6 +22,7 @@ class LoyaltyCard extends Model
         'status',
         'last_activity_at',
         'completed_at',
+        'cycles_completed',
         'max_level_name',
         'max_level_order',
         'max_level_reached_at',
@@ -39,11 +40,11 @@ class LoyaltyCard extends Model
     protected function casts(): array
     {
         return [
-            'progress' => 'array',
+            'progress'              => 'array',
             'cashback_balance_fcfa' => 'decimal:2',
-            'last_activity_at' => 'datetime',
-            'completed_at' => 'datetime',
-            'max_level_reached_at' => 'datetime',
+            'last_activity_at'      => 'datetime',
+            'completed_at'          => 'datetime',
+            'max_level_reached_at'  => 'datetime',
         ];
     }
 
@@ -61,7 +62,7 @@ class LoyaltyCard extends Model
             return null;
         }
 
-        $service = app(\App\Services\Loyalty\LoyaltyTierService::class);
+        $service = app(LoyaltyTierService::class);
         $tiers = $service->tiers($program);
 
         if (count($tiers) <= 1) {
@@ -171,12 +172,12 @@ class LoyaltyCard extends Model
         return $resolved['level_name'] === null && $resolved['tiers'] === []
             ? null
             : [
-                'name' => $resolved['level_name'],
-                'key' => $tierService->levelKey($resolved['level_name']),
+                'name'            => $resolved['level_name'],
+                'key'             => $tierService->levelKey($resolved['level_name']),
                 'percent_to_next' => $resolved['percent_to_next'],
-                'is_max_level' => $resolved['is_max_level'],
-                'position' => $resolved['position'],
-                'icon_key' => $resolved['icon_key'],
+                'is_max_level'    => $resolved['is_max_level'],
+                'position'        => $resolved['position'],
+                'icon_key'        => $resolved['icon_key'],
             ];
     }
 

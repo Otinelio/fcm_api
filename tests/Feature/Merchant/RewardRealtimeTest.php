@@ -94,7 +94,7 @@ class RewardRealtimeTest extends TestCase
         Event::fake([LoyaltyRewardUpdated::class]);
 
         $this->withHeader('Authorization', "Bearer {$token}")
-            ->postJson("/api/merchant/rewards/{$reward->id}/redeem")->assertOk();
+            ->postJson("/api/merchant/rewards/{$reward->id}/redeem", ['token' => $reward->redeem_token])->assertOk();
 
         Event::assertDispatched(
             LoyaltyRewardUpdated::class,
