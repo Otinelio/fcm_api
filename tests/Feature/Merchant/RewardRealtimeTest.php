@@ -153,7 +153,8 @@ class RewardRealtimeTest extends TestCase
                 'status'          => 'available',
                 'program_tier_id' => null,
                 'level_name'      => null,
-                'icon'            => null,
+                'position'        => null,
+                'icon_key'        => null,
             ],
             $event->broadcastWith()
         );
@@ -185,7 +186,7 @@ class RewardRealtimeTest extends TestCase
         \Illuminate\Support\Facades\Event::assertDispatched(\App\Events\LoyaltyRewardUpdated::class, function ($event) {
             $payload = $event->broadcastWith();
 
-            return $payload['level_name'] === 'Bronze' && $payload['icon'] === '🥉' && $payload['program_tier_id'] !== null;
+            return $payload['level_name'] === 'Bronze' && $payload['position'] === 1 && $payload['program_tier_id'] !== null;
         });
     }
 }

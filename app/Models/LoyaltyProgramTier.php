@@ -11,6 +11,7 @@ class LoyaltyProgramTier extends Model
         'order',
         'goal',
         'level_name',
+        'icon_key',
         'reward_description',
         'reveal_reward',
         'validity_days',

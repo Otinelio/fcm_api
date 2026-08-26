@@ -36,32 +36,34 @@ class LoyaltyTierServiceTest extends TestCase
         ]);
     }
 
-    public function test_icon_for_rank_follows_fixed_sequence_when_five_tiers(): void
+    public function test_tiers_expose_sequential_position_and_stored_icon_key(): void
     {
-        $service = app(LoyaltyTierService::class);
-        $this->assertSame('🥉', $service->iconForRank(1, 5));
-        $this->assertSame('🥈', $service->iconForRank(2, 5));
-        $this->assertSame('🥇', $service->iconForRank(3, 5));
-        $this->assertSame('💎', $service->iconForRank(4, 5));
-        $this->assertSame('👑', $service->iconForRank(5, 5));
+        $card = $this->cardWithProgram('stamps', [], stampsCurrent: 0);
+        LoyaltyProgramTier::create([
+            'loyalty_program_id' => $card->loyalty_program_id, 'order' => 1,
+            'goal' => 500, 'level_name' => 'Bronze', 'reward_description' => 'Boisson offerte',
+        ]);
+        LoyaltyProgramTier::create([
+            'loyalty_program_id' => $card->loyalty_program_id, 'order' => 2,
+            'goal' => 1000, 'level_name' => 'Custom Elite', 'reward_description' => 'Menu offert',
+            'icon_key' => 'rocket_launch',
+        ]);
+
+        $tiers = app(LoyaltyTierService::class)->tiers($card->loyaltyProgram->fresh());
+
+        $this->assertSame(1, $tiers[0]['position']);
+        $this->assertNull($tiers[0]['icon_key']);
+        $this->assertSame(2, $tiers[1]['position']);
+        $this->assertSame('rocket_launch', $tiers[1]['icon_key']);
     }
 
-    public function test_icon_for_rank_last_tier_is_always_max_regardless_of_total(): void
+    public function test_tiers_fallback_mono_tier_has_position_one_and_no_icon_key(): void
     {
-        $service = app(LoyaltyTierService::class);
+        $card = $this->cardWithProgram('stamps', ['goal' => 8, 'reward_description' => 'Café offert']);
+        $tiers = app(LoyaltyTierService::class)->tiers($card->loyaltyProgram);
 
-        // 2 paliers : le dernier passe directement à l'icône maximale.
-        $this->assertSame('🥉', $service->iconForRank(1, 2));
-        $this->assertSame('👑', $service->iconForRank(2, 2));
-
-        // 3 paliers : réparti sur toute la plage, dernier toujours 👑.
-        $this->assertSame('🥉', $service->iconForRank(1, 3));
-        $this->assertSame('🥇', $service->iconForRank(2, 3));
-        $this->assertSame('👑', $service->iconForRank(3, 3));
-
-        // Plus de 5 paliers : toujours borné à 👑 au dernier.
-        $this->assertSame('🥉', $service->iconForRank(1, 8));
-        $this->assertSame('👑', $service->iconForRank(8, 8));
+        $this->assertSame(1, $tiers[0]['position']);
+        $this->assertNull($tiers[0]['icon_key']);
     }
 
     public function test_tiers_falls_back_to_legacy_config_goal_when_no_rows(): void
@@ -121,7 +123,9 @@ class LoyaltyTierServiceTest extends TestCase
         $this->assertSame('reached', $resolved['tiers'][0]['status']);
         $this->assertSame('current', $resolved['tiers'][1]['status']);
         $this->assertSame('upcoming', $resolved['tiers'][2]['status']);
-        $this->assertSame('🥉', $resolved['tiers'][0]['icon']);
+        $this->assertSame(1, $resolved['tiers'][0]['position']);
+        $this->assertNull($resolved['tiers'][0]['icon_key']);
+        $this->assertSame(1, $resolved['position']);
     }
 
     public function test_resolve_caps_at_max_level(): void
@@ -172,7 +176,7 @@ class LoyaltyTierServiceTest extends TestCase
 
         $this->assertSame('Café offert', $nextReward['reward_description']);
         $this->assertSame(8, $nextReward['goal']);
-        $this->assertSame('🎁', $nextReward['icon']);
+        $this->assertSame(1, $nextReward['position']);
     }
 
     public function test_next_reward_targets_the_first_unreached_tier_for_a_multi_tier_program(): void
@@ -191,7 +195,7 @@ class LoyaltyTierServiceTest extends TestCase
 
         $this->assertSame('Dessert offert', $nextReward['reward_description']);
         $this->assertSame(1000, $nextReward['goal']);
-        $this->assertSame('👑', $nextReward['icon']);
+        $this->assertSame(2, $nextReward['position']);
     }
 
     public function test_next_reward_shows_the_last_tier_once_everything_is_reached(): void
@@ -209,7 +213,7 @@ class LoyaltyTierServiceTest extends TestCase
         $nextReward = app(LoyaltyTierService::class)->nextReward($card->fresh());
 
         $this->assertSame('Menu offert', $nextReward['reward_description']);
-        $this->assertSame('👑', $nextReward['icon']);
+        $this->assertSame(2, $nextReward['position']);
     }
 
     public function test_next_reward_is_null_for_cashback_without_configured_tiers(): void
@@ -314,5 +318,23 @@ class LoyaltyTierServiceTest extends TestCase
         $resolved = app(LoyaltyTierService::class)->resolve($card->fresh());
 
         $this->assertSame('Boisson offerte', $resolved['tiers'][0]['reward_description']);
+    }
+
+    public function test_card_level_attribute_exposes_position_and_icon_key(): void
+    {
+        $card = $this->cardWithProgram('stamps', [], stampsCurrent: 700);
+        LoyaltyProgramTier::create([
+            'loyalty_program_id' => $card->loyalty_program_id, 'order' => 1,
+            'goal' => 500, 'level_name' => 'Bronze', 'reward_description' => 'Boisson offerte',
+        ]);
+        LoyaltyProgramTier::create([
+            'loyalty_program_id' => $card->loyalty_program_id, 'order' => 2,
+            'goal' => 1000, 'level_name' => 'Argent', 'reward_description' => 'Dessert offert',
+        ]);
+
+        $level = $card->fresh()->level;
+
+        $this->assertSame(1, $level['position']);
+        $this->assertNull($level['icon_key']);
     }
 }

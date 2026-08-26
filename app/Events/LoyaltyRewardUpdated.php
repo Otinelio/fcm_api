@@ -46,16 +46,28 @@ class LoyaltyRewardUpdated implements ShouldBroadcast
     public function broadcastWith(): array
     {
         $tier = $this->reward->programTier;
-        $totalTiers = $tier?->loyaltyProgram?->tiers()->count() ?? 0;
+        $tierService = app(\App\Services\Loyalty\LoyaltyTierService::class);
+        $position = null;
+        $icon_key = null;
+
+        if ($tier) {
+            $tiers = $tierService->tiers($tier->loyaltyProgram);
+            foreach ($tiers as $t) {
+                if ($t['id'] === $tier->id) {
+                    $position = $t['position'];
+                    $icon_key = $t['icon_key'];
+                    break;
+                }
+            }
+        }
 
         return [
             'id'              => $this->reward->id,
             'status'          => $this->reward->status,
             'program_tier_id' => $this->reward->program_tier_id,
             'level_name'      => $tier?->level_name,
-            'icon'            => $tier
-                ? app(\App\Services\Loyalty\LoyaltyTierService::class)->iconForRank($tier->order, $totalTiers)
-                : null,
+            'position'        => $position,
+            'icon_key'        => $icon_key,
         ];
     }
 }

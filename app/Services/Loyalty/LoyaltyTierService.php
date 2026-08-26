@@ -17,27 +17,41 @@ use Illuminate\Support\Facades\DB;
  *   par ce service (`resolve()` renvoie `tiers: []`, `level_name: null`).
  * - 2 paliers ou plus : cumulatif à vie (jamais reset), plafonné au dernier
  *   palier une fois atteint. C'est ce que `resolve()` calcule.
+ *
+ * Icône/nom de niveau : pour les paliers en position 1 à 5, nom et icône
+ * sont imposés côté client (`LoyaltyLevel.forPosition`, ordre Bronze <
+ * Argent < Or < Platine < Fidèle) — ce service ne les calcule pas, il
+ * expose seulement la `position` (rang 1-based, déterministe). Au-delà de
+ * la position 5, le marchand choisit nom (`level_name`, texte libre déjà
+ * existant) et icône (`icon_key`, palette côté client) — ce service se
+ * contente de faire transiter `icon_key` tel que stocké.
  */
 class LoyaltyTierService
 {
-    private const ICONS = ['🥉', '🥈', '🥇', '💎', '👑'];
-
     /**
-     * Icône du palier `$rank` (1-based) parmi `$totalTiers` paliers du
-     * programme. Mise à l'échelle sur la plage `self::ICONS` de sorte que le
-     * dernier palier du programme obtienne toujours l'icône maximale (👑),
-     * quel que soit le nombre de paliers configurés — un programme à 2
-     * paliers va directement de 🥉 à 👑, sans s'arrêter à 🥈.
+     * Clé canonique d'un niveau de fidélité, dérivée de son nom tel que
+     * configuré par le marchand (`level_name` des paliers). Permet au client
+     * mobile de filtrer/représenter les niveaux sans faire de matching
+     * fragile sur les libellés libres (« Or », « Gold », « VIP Or »...).
+     * Matching insensible à la casse et aux accents ; `custom` en fallback.
      */
-    public function iconForRank(int $rank, int $totalTiers): string
+    public function levelKey(?string $levelName): string
     {
-        $maxIndex = count(self::ICONS) - 1;
+        $n = mb_strtolower(trim((string) $levelName));
+        $n = strtr($n, [
+            'à' => 'a', 'â' => 'a', 'ä' => 'a', 'é' => 'e', 'è' => 'e',
+            'ê' => 'e', 'ë' => 'e', 'î' => 'i', 'ï' => 'i', 'ô' => 'o',
+            'ö' => 'o', 'ù' => 'u', 'û' => 'u', 'ü' => 'u', 'ç' => 'c',
+        ]);
 
-        $index = $totalTiers <= 1
-            ? $maxIndex
-            : (int) round((($rank - 1) / ($totalTiers - 1)) * $maxIndex);
-
-        return self::ICONS[$index] ?? self::ICONS[$maxIndex];
+        return match (true) {
+            str_contains($n, 'bronze') => 'bronze',
+            str_contains($n, 'argent'), str_contains($n, 'silver') => 'silver',
+            str_contains($n, 'platine'), str_contains($n, 'platinum') => 'platinum',
+            str_contains($n, 'gold') => 'gold',
+            $n === 'or' || str_ends_with($n, ' or') || str_starts_with($n, 'or ') => 'gold',
+            default => 'custom',
+        };
     }
 
     /**
@@ -52,8 +66,8 @@ class LoyaltyTierService
     }
 
     /**
-     * @return array<int, array{id: ?int, order: int, goal: int, level_name: ?string, reward_description: string, reveal_reward: bool, validity_days: ?int}>
-     * Trié par `goal` croissant.
+     * @return array<int, array{id: ?int, order: int, position: int, goal: int, level_name: ?string, icon_key: ?string, reward_description: string, reveal_reward: bool, validity_days: ?int}>
+     *                                                                                                                                                                                                    Trié par `goal` croissant.
      */
     public function tiers(?LoyaltyProgram $program): array
     {
@@ -66,14 +80,16 @@ class LoyaltyTierService
             return $rows
                 ->sortBy('goal')
                 ->values()
-                ->map(fn ($r) => [
-                    'id'                  => $r->id,
-                    'order'               => $r->order,
-                    'goal'                => max(1, (int) $r->goal),
-                    'level_name'          => $r->level_name,
-                    'reward_description'  => $r->reward_description,
-                    'reveal_reward'       => $r->reveal_reward,
-                    'validity_days'       => $r->validity_days ?? ($program->config['reward_validity_days'] ?? null),
+                ->map(fn ($r, $i) => [
+                    'id' => $r->id,
+                    'order' => $r->order,
+                    'position' => $i + 1,
+                    'goal' => max(1, (int) $r->goal),
+                    'level_name' => $r->level_name,
+                    'icon_key' => $r->icon_key,
+                    'reward_description' => $r->reward_description,
+                    'reveal_reward' => $r->reveal_reward,
+                    'validity_days' => $r->validity_days ?? ($program->config['reward_validity_days'] ?? null),
                 ])
                 ->all();
         }
@@ -91,13 +107,15 @@ class LoyaltyTierService
         $title = (string) ($program->config['reward_description'] ?? '') ?: 'Récompense débloquée';
 
         return [[
-            'id'                 => null,
-            'order'              => 1,
-            'goal'               => max(1, $goal),
-            'level_name'         => null,
+            'id' => null,
+            'order' => 1,
+            'position' => 1,
+            'goal' => max(1, $goal),
+            'level_name' => null,
+            'icon_key' => null,
             'reward_description' => $title,
-            'reveal_reward'      => true,
-            'validity_days'      => $program->config['reward_validity_days'] ?? null,
+            'reveal_reward' => true,
+            'validity_days' => $program->config['reward_validity_days'] ?? null,
         ]];
     }
 
@@ -109,7 +127,7 @@ class LoyaltyTierService
      * justement le seul cas où ce champ a un rôle (pas de roadmap de niveau
      * pour montrer la récompense visée).
      *
-     * @return array{goal: int, level_name: ?string, reward_description: string, icon: string}|null
+     * @return array{id: ?int, order: int, position: int, goal: int, level_name: ?string, icon_key: ?string, reward_description: string, reveal_reward: bool, validity_days: ?int}|null
      */
     public function nextReward(LoyaltyCard $card): ?array
     {
@@ -119,21 +137,20 @@ class LoyaltyTierService
         }
 
         if (count($tiers) === 1) {
-            return [...$this->redact($tiers[0]), 'icon' => '🎁'];
+            return $this->redact($tiers[0]);
         }
 
         $metric = $this->lifetimeMetric($card);
-        $totalTiers = count($tiers);
 
-        foreach ($tiers as $i => $tier) {
+        foreach ($tiers as $tier) {
             if ($tier['goal'] > $metric) {
-                return [...$this->redact($tier), 'icon' => $this->iconForRank($i + 1, $totalTiers)];
+                return $this->redact($tier);
             }
         }
 
         // Tous les paliers sont atteints : aperçu du dernier (le max), déjà
         // débloqué en réalité — jamais masqué, quel que soit le réglage.
-        return [...$tiers[$totalTiers - 1], 'icon' => $this->iconForRank($totalTiers, $totalTiers)];
+        return $tiers[count($tiers) - 1];
     }
 
     public function lifetimeCashback(LoyaltyCard $card): float
@@ -158,13 +175,13 @@ class LoyaltyTierService
             : (float) ($card->progress['stamps_current'] ?? 0);
     }
 
-    /** @return array{level_name: ?string, percent_to_next: ?int, is_max_level: bool, tiers: array} */
+    /** @return array{level_name: ?string, percent_to_next: ?int, is_max_level: bool, position: ?int, icon_key: ?string, tiers: array} */
     public function resolve(LoyaltyCard $card): array
     {
         $tiers = $this->tiers($card->loyaltyProgram);
 
         if (count($tiers) <= 1) {
-            return ['level_name' => null, 'percent_to_next' => null, 'is_max_level' => false, 'tiers' => []];
+            return ['level_name' => null, 'percent_to_next' => null, 'is_max_level' => false, 'position' => null, 'icon_key' => null, 'tiers' => []];
         }
 
         $metric = $this->lifetimeMetric($card);
@@ -192,8 +209,7 @@ class LoyaltyTierService
             ->pluck('program_tier_id')
             ->all();
 
-        $totalTiers = count($tiers);
-        $tiersWithStatus = collect($tiers)->values()->map(function ($tier, $i) use ($metric, $next, $totalTiers, $everUnlockedTierIds) {
+        $tiersWithStatus = collect($tiers)->values()->map(function ($tier) use ($metric, $next, $everUnlockedTierIds) {
             $alreadyUnlocked = $tier['id'] !== null && in_array($tier['id'], $everUnlockedTierIds, true);
             $status = ($tier['goal'] <= $metric || $alreadyUnlocked)
                 ? 'reached'
@@ -201,26 +217,30 @@ class LoyaltyTierService
 
             $tier = $status === 'reached' ? $tier : $this->redact($tier);
 
-            return [...$tier, 'icon' => $this->iconForRank($i + 1, $totalTiers), 'status' => $status];
+            return [...$tier, 'status' => $status];
         })->all();
 
         if ($current === null) {
             $firstGoal = $tiers[0]['goal'];
 
             return [
-                'level_name'      => null,
+                'level_name' => null,
                 'percent_to_next' => (int) round(max(0, min(100, ($metric / $firstGoal) * 100))),
-                'is_max_level'    => false,
-                'tiers'           => $tiersWithStatus,
+                'is_max_level' => false,
+                'position' => null,
+                'icon_key' => null,
+                'tiers' => $tiersWithStatus,
             ];
         }
 
         if ($next === null) {
             return [
-                'level_name'      => $current['level_name'],
+                'level_name' => $current['level_name'],
                 'percent_to_next' => null,
-                'is_max_level'    => true,
-                'tiers'           => $tiersWithStatus,
+                'is_max_level' => true,
+                'position' => $current['position'],
+                'icon_key' => $current['icon_key'],
+                'tiers' => $tiersWithStatus,
             ];
         }
 
@@ -228,10 +248,12 @@ class LoyaltyTierService
         $percent = $span > 0 ? (($metric - $current['goal']) / $span) * 100 : 0;
 
         return [
-            'level_name'      => $current['level_name'],
+            'level_name' => $current['level_name'],
             'percent_to_next' => (int) round(max(0, min(100, $percent))),
-            'is_max_level'    => false,
-            'tiers'           => $tiersWithStatus,
+            'is_max_level' => false,
+            'position' => $current['position'],
+            'icon_key' => $current['icon_key'],
+            'tiers' => $tiersWithStatus,
         ];
     }
 }

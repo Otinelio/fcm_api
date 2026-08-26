@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\Loyalty\LoyaltyTierService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -38,11 +39,11 @@ class LoyaltyCard extends Model
     protected function casts(): array
     {
         return [
-            'progress'              => 'array',
+            'progress' => 'array',
             'cashback_balance_fcfa' => 'decimal:2',
-            'last_activity_at'      => 'datetime',
-            'completed_at'          => 'datetime',
-            'max_level_reached_at'  => 'datetime',
+            'last_activity_at' => 'datetime',
+            'completed_at' => 'datetime',
+            'max_level_reached_at' => 'datetime',
         ];
     }
 
@@ -140,7 +141,7 @@ class LoyaltyCard extends Model
             return 0;
         }
 
-        $service = app(\App\Services\Loyalty\LoyaltyTierService::class);
+        $service = app(LoyaltyTierService::class);
         $tiers = $service->tiers($program);
 
         if ($program->type === 'cashback') {
@@ -164,21 +165,25 @@ class LoyaltyCard extends Model
     /** Niveau de fidélité — `null` tant que le programme n'a qu'un seul palier configuré (voir `LoyaltyTierService`). */
     public function getLevelAttribute(): ?array
     {
-        $resolved = app(\App\Services\Loyalty\LoyaltyTierService::class)->resolve($this);
+        $resolved = app(LoyaltyTierService::class)->resolve($this);
+        $tierService = app(LoyaltyTierService::class);
 
         return $resolved['level_name'] === null && $resolved['tiers'] === []
             ? null
             : [
-                'name'            => $resolved['level_name'],
+                'name' => $resolved['level_name'],
+                'key' => $tierService->levelKey($resolved['level_name']),
                 'percent_to_next' => $resolved['percent_to_next'],
-                'is_max_level'    => $resolved['is_max_level'],
+                'is_max_level' => $resolved['is_max_level'],
+                'position' => $resolved['position'],
+                'icon_key' => $resolved['icon_key'],
             ];
     }
 
     /** Roadmap des paliers (vide si un seul palier configuré) — pour la vue "progression" côté client. */
     public function getTiersAttribute(): array
     {
-        return app(\App\Services\Loyalty\LoyaltyTierService::class)->resolve($this)['tiers'];
+        return app(LoyaltyTierService::class)->resolve($this)['tiers'];
     }
 
     /**
@@ -190,7 +195,7 @@ class LoyaltyCard extends Model
      */
     public function getNextRewardAttribute(): ?array
     {
-        return app(\App\Services\Loyalty\LoyaltyTierService::class)->nextReward($this);
+        return app(LoyaltyTierService::class)->nextReward($this);
     }
 
     protected static function booted(): void
