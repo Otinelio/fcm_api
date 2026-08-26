@@ -176,6 +176,32 @@ class LoyaltyProgramCreationTest extends TestCase
         $this->assertSame('Découverte', $program->tiers->first()->level_name);
     }
 
+    public function test_tier_icon_key_is_persisted_for_a_tier_beyond_position_five(): void
+    {
+        [$restaurant, $token] = $this->restaurantWithToken();
+
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/loyalty-programs', [
+                'mode' => 'stamps',
+                'tiers' => [
+                    ['goal' => 500, 'level_name' => 'Bronze', 'reward_description' => 'A'],
+                    ['goal' => 1000, 'level_name' => 'Argent', 'reward_description' => 'B'],
+                    ['goal' => 1500, 'level_name' => 'Or', 'reward_description' => 'C'],
+                    ['goal' => 2000, 'level_name' => 'Platine', 'reward_description' => 'D'],
+                    ['goal' => 2500, 'level_name' => 'Fidèle', 'reward_description' => 'E'],
+                    ['goal' => 3000, 'level_name' => 'Mon Palier Custom', 'icon_key' => 'diamond', 'reward_description' => 'F'],
+                ],
+                ...$this->baseVisuals,
+            ]);
+
+        $response->assertCreated();
+        $program = $restaurant->fresh()->loyaltyProgram;
+        $this->assertSame(6, $program->tiers()->count());
+        $sixthTier = $program->tiers->sortBy('goal')->values()->get(5);
+        $this->assertSame('Mon Palier Custom', $sixthTier->level_name);
+        $this->assertSame('diamond', $sixthTier->icon_key);
+    }
+
     public function test_tiers_goal_must_be_strictly_increasing(): void
     {
         [, $token] = $this->restaurantWithToken();

@@ -63,6 +63,11 @@ class StoreLoyaltyProgramRequest extends FormRequest
             ],
             'tiers.*.goal'                => ['required', 'integer', 'min:1', 'max:1000000'],
             'tiers.*.level_name'          => ['nullable', 'string', 'max:100'],
+            // Icône choisie par le marchand pour les paliers en position 6+
+            // (au-delà de la position 5, nom et icône sont libres — voir
+            // `LoyaltyTierService`). Palette (`TierIconPalette`) définie côté
+            // Flutter uniquement : on reste permissif ici, comme `level_name`.
+            'tiers.*.icon_key'            => ['nullable', 'string', 'max:100'],
             'tiers.*.reward_description'  => ['required', 'string', 'max:255'],
             // Récompense "surprise" propre à ce palier — `false` = contenu
             // masqué côté client jusqu'au déblocage réel. Défaut `true`.

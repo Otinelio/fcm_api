@@ -3,6 +3,8 @@
 namespace App\Console\Commands;
 
 use App\Models\LoyaltyProgram;
+use App\Models\LoyaltyProgramTier;
+use App\Services\Loyalty\LoyaltyTierService;
 use Illuminate\Console\Command;
 
 /**
@@ -23,20 +25,26 @@ class RenameCanonicalLoyaltyTiers extends Command
 
     private const CANONICAL_NAMES = ['Bronze', 'Argent', 'Or', 'Platine', 'Fidèle'];
 
-    public function handle(): int
+    public function handle(LoyaltyTierService $tierService): int
     {
         $count = 0;
 
-        LoyaltyProgram::with('tiers')->chunk(50, function ($programs) use (&$count) {
+        LoyaltyProgram::with('tiers')->chunk(50, function ($programs) use (&$count, $tierService) {
             foreach ($programs as $program) {
-                $tiers = $program->tiers->sortBy('goal')->values();
-                foreach ($tiers as $index => $tier) {
-                    if ($index >= count(self::CANONICAL_NAMES)) {
+                foreach ($tierService->tiers($program) as $tierData) {
+                    $position = $tierData['position'];
+                    if ($position > count(self::CANONICAL_NAMES)) {
                         break;
                     }
-                    $canonicalName = self::CANONICAL_NAMES[$index];
-                    if ($tier->level_name !== $canonicalName) {
-                        $tier->update(['level_name' => $canonicalName]);
+                    // Programme jamais migré vers `loyalty_program_tiers`
+                    // (fallback mono-palier de `LoyaltyTierService::tiers()`) :
+                    // pas de ligne réelle à mettre à jour.
+                    if ($tierData['id'] === null) {
+                        continue;
+                    }
+                    $canonicalName = self::CANONICAL_NAMES[$position - 1];
+                    if ($tierData['level_name'] !== $canonicalName) {
+                        LoyaltyProgramTier::where('id', $tierData['id'])->update(['level_name' => $canonicalName]);
                         $count++;
                     }
                 }

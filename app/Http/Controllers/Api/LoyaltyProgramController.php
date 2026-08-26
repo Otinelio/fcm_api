@@ -96,6 +96,7 @@ class LoyaltyProgramController extends Controller
                     [
                         'goal' => (int) $tier['goal'],
                         'level_name' => $tier['level_name'] ?? null,
+                        'icon_key' => $tier['icon_key'] ?? null,
                         'reward_description' => $tier['reward_description'],
                         'reveal_reward' => $tier['reveal_reward'] ?? true,
                         'validity_days' => $tier['validity_days'] ?? null,
