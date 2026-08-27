@@ -80,9 +80,8 @@ class MerchantDashboardController extends Controller
         // requêtable en SQL. Les listes restant par-commerce, le volume reste
         // raisonnable.
         if ($levelKey = trim((string) $request->query('level', ''))) {
-            $tierService = app(LoyaltyTierService::class);
             $cards = $cards
-                ->filter(fn (LoyaltyCard $card) => $tierService->levelKey($card->level['name'] ?? null) === $levelKey)
+                ->filter(fn (LoyaltyCard $card) => ($card->level['key'] ?? null) === $levelKey)
                 ->values();
         }
 
@@ -140,14 +139,29 @@ class MerchantDashboardController extends Controller
             $code,
         );
 
+        // Saisie manuelle d'un numéro de téléphone : le marchand peut le
+        // taper avec espaces/tirets et sans l'indicatif pays. On compare sur
+        // les chiffres seuls et on tolère l'indicatif manquant (`LIKE
+        // '%suffixe'`) — seuil de 6 chiffres pour éviter un faux positif sur
+        // une saisie trop courte.
+        $phoneDigits = preg_replace('/\D+/', '', $code);
+
         $card = LoyaltyCard::query()
             ->with('client')
             ->where('restaurant_id', $restaurant->id)
-            ->where(function ($q) use ($code, $isUuid) {
+            ->where(function ($q) use ($code, $isUuid, $phoneDigits) {
                 $q->where('card_code', $code);
                 if ($isUuid) {
                     $q->orWhere('qr_token', $code)
                         ->orWhereHas('client', fn ($c) => $c->where('uuid', $code));
+                }
+                if (strlen($phoneDigits) >= 6) {
+                    $q->orWhereHas('client', function ($c) use ($phoneDigits) {
+                        $c->whereRaw(
+                            "regexp_replace(phone, '\\D', '', 'g') LIKE ?",
+                            ["%{$phoneDigits}"],
+                        );
+                    });
                 }
             })
             ->first();
@@ -272,6 +286,9 @@ class MerchantDashboardController extends Controller
                 return response()->json(['message' => 'Aucun tampon à retirer.'], 422);
             }
 
+            // Pré-vérification rapide (hors transaction, sans verrou ligne) :
+            // rejette tout de suite le cas courant. Ne suffit pas à elle
+            // seule — voir le re-check verrouillé ci-dessous.
             $rewards = LoyaltyReward::where('loyalty_transaction_id', $lastStamp->id)->get();
 
             if ($rewards->contains(fn ($r) => $r->status === 'used')) {
@@ -295,7 +312,25 @@ class MerchantDashboardController extends Controller
             // compteur comme la progression et les récompenses associées.
             $cyclesUndone = (int) ($meta['cycles'] ?? 0);
 
-            DB::transaction(function () use ($loyaltyCard, $lastStamp, $rewards, $meta, $staffUserId, $cyclesUndone) {
+            DB::transaction(function () use ($loyaltyCard, $lastStamp, $meta, $staffUserId, $cyclesUndone) {
+                // Re-lecture verrouillée (`lockForUpdate`) : `redeemReward`
+                // verrouille la même ligne avant de passer une récompense à
+                // `used` (voir plus bas dans ce fichier). Sans ce verrou, un
+                // scan de récompense concurrent au retrait pourrait passer
+                // les deux vérifications "available" en parallèle, puis ce
+                // retrait écraserait le `used` tout juste posé par un
+                // `canceled` — la récompense légitimement consommée par le
+                // client disparaîtrait de son historique.
+                $rewards = LoyaltyReward::where('loyalty_transaction_id', $lastStamp->id)
+                    ->lockForUpdate()
+                    ->get();
+
+                abort_if(
+                    $rewards->contains(fn ($r) => $r->status === 'used'),
+                    422,
+                    'Impossible de retirer ce tampon : la récompense qu\'il a débloquée a déjà été utilisée.',
+                );
+
                 $progress = $loyaltyCard->progress ?? [];
 
                 // D'autres récompenses (d'un cycle antérieur) peuvent rester
@@ -493,8 +528,8 @@ class MerchantDashboardController extends Controller
      * POST /api/merchant/clients/{loyaltyCard}/redeem-cashback
      *
      * Utilisation du solde cashback comme réduction sur un achat en cours —
-     * plafonnée au solde ET, si configuré, à un pourcentage du montant de
-     * l'achat (`cashback_redeem_cap_percent`).
+     * plafonnée au solde et, si configuré, impossible tant que le solde n'a
+     * pas atteint le seuil minimum (`cashback_redeem_threshold_fcfa`).
      */
     public function redeemCashback(Request $request, LoyaltyCard $loyaltyCard): JsonResponse
     {
@@ -518,8 +553,8 @@ class MerchantDashboardController extends Controller
         $amountFcfa = (float) $request->input('amount_fcfa');
         $redeemAmount = (float) $request->input('redeem_amount_fcfa');
 
-        // Indépendant du plafond configurable (`cashback_redeem_cap_percent`,
-        // optionnel) : cette règle s'applique toujours, même sans plafond
+        // Indépendant du seuil configurable (`cashback_redeem_threshold_fcfa`,
+        // optionnel) : cette règle s'applique toujours, même sans seuil
         // défini — le cashback utilisé ne réduit jamais l'achat sous zéro.
         if ($redeemAmount > $amountFcfa) {
             return response()->json([
@@ -527,14 +562,11 @@ class MerchantDashboardController extends Controller
             ], 422);
         }
 
-        $capPercent = $program->config['cashback_redeem_cap_percent'] ?? null;
-        if ($capPercent !== null) {
-            $maxAllowed = round($amountFcfa * ((float) $capPercent) / 100, 2);
-            if ($redeemAmount > $maxAllowed) {
-                return response()->json([
-                    'message' => "Plafond dépassé : maximum {$maxAllowed} FCFA de cashback pour cet achat ({$capPercent}%).",
-                ], 422);
-            }
+        $threshold = $program->config['cashback_redeem_threshold_fcfa'] ?? null;
+        if ($threshold !== null && $loyaltyCard->cashback_available_fcfa < (float) $threshold) {
+            return response()->json([
+                'message' => "Seuil non atteint : le solde doit atteindre {$threshold} FCFA avant utilisation (solde actuel : {$loyaltyCard->cashback_available_fcfa} FCFA).",
+            ], 422);
         }
 
         $staffUserId = CurrentActor::resolve($request)->staffUser?->id;
@@ -550,7 +582,7 @@ class MerchantDashboardController extends Controller
         }
 
         try {
-            DB::transaction(function () use ($loyaltyCard, $redeemAmount, $amountFcfa, $staffUserId) {
+            DB::transaction(function () use ($loyaltyCard, $redeemAmount, $amountFcfa, $threshold, $staffUserId) {
                 // Rechargement de la carte sous `LockForUpdate` : c'est ce
                 // solde frais — pas celui lu hors verrou — qui est comparé.
                 $card = LoyaltyCard::query()
@@ -561,6 +593,12 @@ class MerchantDashboardController extends Controller
                 if ($card === null || $redeemAmount > $card->cashback_available_fcfa) {
                     throw ValidationException::withMessages([
                         'redeem_amount_fcfa' => 'Solde cashback insuffisant.',
+                    ]);
+                }
+
+                if ($threshold !== null && $card->cashback_available_fcfa < (float) $threshold) {
+                    throw ValidationException::withMessages([
+                        'redeem_amount_fcfa' => "Seuil non atteint : le solde doit atteindre {$threshold} FCFA avant utilisation.",
                     ]);
                 }
 
@@ -893,19 +931,28 @@ class MerchantDashboardController extends Controller
         }
 
         try {
-            if (! $loyaltyReward->isRedeemable()) {
-                return response()->json([
-                    'message' => $loyaltyReward->status !== 'available'
-                        ? 'Cette récompense a déjà été utilisée ou annulée.'
-                        : 'Cette récompense a expiré.',
-                ], 422);
-            }
+            $usedByStaffUserId = CurrentActor::resolve($request)->staffUser?->id;
 
-            $loyaltyReward->update([
-                'status' => 'used',
-                'used_at' => now(),
-                'used_by_staff_user_id' => CurrentActor::resolve($request)->staffUser?->id,
-            ]);
+            // Re-lecture verrouillée dans une transaction : symétrique du
+            // `lockForUpdate` de `removeStamp` sur la même ligne. Sans ça, un
+            // retrait de tampon concurrent pourrait committer sa propre
+            // annulation entre notre `isRedeemable()` (lu avant le verrou) et
+            // ce `update()`, et cette validation écraserait le `canceled`
+            // fraîchement posé pour remettre `used` — la récompense
+            // paraîtrait consommée alors qu'elle vient d'être retirée.
+            DB::transaction(function () use ($loyaltyReward, $usedByStaffUserId) {
+                $reward = LoyaltyReward::whereKey($loyaltyReward->id)->lockForUpdate()->first();
+
+                abort_if(! $reward->isRedeemable(), 422, $reward->status !== 'available'
+                    ? 'Cette récompense a déjà été utilisée ou annulée.'
+                    : 'Cette récompense a expiré.');
+
+                $reward->update([
+                    'status' => 'used',
+                    'used_at' => now(),
+                    'used_by_staff_user_id' => $usedByStaffUserId,
+                ]);
+            });
         } finally {
             $lock->release();
         }

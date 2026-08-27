@@ -59,7 +59,7 @@ class LoyaltyProgramCreationTest extends TestCase
             ->postJson('/api/loyalty-programs', [
                 'mode' => 'cashback',
                 'cashback_percentage' => 5,
-                'cashback_redeem_cap_percent' => 50,
+                'cashback_redeem_threshold_fcfa' => 10000,
                 ...$this->baseVisuals,
             ]);
 
@@ -67,7 +67,7 @@ class LoyaltyProgramCreationTest extends TestCase
         $program = $restaurant->fresh()->loyaltyProgram;
         $this->assertSame('cashback', $program->type);
         $this->assertSame(5.0, (float) $program->config['cashback_percentage']);
-        $this->assertSame(50, $program->config['cashback_redeem_cap_percent']);
+        $this->assertSame(10000.0, (float) $program->config['cashback_redeem_threshold_fcfa']);
         $this->assertSame(0, $program->tiers()->count());
     }
 

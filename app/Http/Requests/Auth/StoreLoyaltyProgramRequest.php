@@ -31,7 +31,9 @@ class StoreLoyaltyProgramRequest extends FormRequest
             // changement cassant pour les clients tiers pas encore à jour.
             'goal'                    => ['nullable', 'integer', 'min:1', 'max:1000000'],
             'cashback_percentage'     => ['required_if:mode,cashback', 'numeric', 'min:0.1', 'max:100'],
-            'cashback_redeem_cap_percent' => ['nullable', 'integer', 'min:1', 'max:100'],
+            // Seuil de solde cashback (FCFA) à atteindre avant que le client
+            // puisse l'utiliser — remplace l'ancien plafond en % du ticket.
+            'cashback_redeem_threshold_fcfa' => ['nullable', 'numeric', 'min:0', 'max:100000000'],
             // Expiration du solde cashback (jours sans crédit) — optionnelle.
             'cashback_expiry_days'    => ['nullable', 'integer', 'min:1', 'max:3650'],
             // Taux de conversion mode "Achat" (FCFA pour 1 point) — 100 par

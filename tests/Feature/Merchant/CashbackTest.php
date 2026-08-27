@@ -95,20 +95,19 @@ class CashbackTest extends TestCase
         $this->assertSame('3000.00', $card->fresh()->cashback_balance_fcfa);
     }
 
-    public function test_redeem_deducts_balance_within_purchase_and_cap(): void
+    public function test_redeem_deducts_balance_once_threshold_reached(): void
     {
         [$restaurant, $token] = $this->restaurantWithToken();
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id,
             'name'          => 'Programme',
             'type'          => 'cashback',
-            'config'        => ['cashback_percentage' => 5, 'cashback_redeem_cap_percent' => 50],
+            'config'        => ['cashback_percentage' => 5, 'cashback_redeem_threshold_fcfa' => 3000],
         ]);
         $card = $this->cardFor($restaurant, $program);
         $card->update(['cashback_balance_fcfa' => 5000]);
 
-        // Achat 10 000 FCFA, plafond 50% -> max utilisable 5 000 FCFA.
-        // Le client choisit d'utiliser 2 000 FCFA seulement.
+        // Seuil 3 000 FCFA atteint (solde 5 000) -> utilisation autorisée.
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson("/api/merchant/clients/{$card->id}/redeem-cashback", [
                 'amount_fcfa'        => 10000,
@@ -125,19 +124,19 @@ class CashbackTest extends TestCase
         ]);
     }
 
-    public function test_redeem_rejects_amount_above_purchase_cap(): void
+    public function test_redeem_rejects_when_balance_below_threshold(): void
     {
         [$restaurant, $token] = $this->restaurantWithToken();
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id,
             'name'          => 'Programme',
             'type'          => 'cashback',
-            'config'        => ['cashback_percentage' => 5, 'cashback_redeem_cap_percent' => 50],
+            'config'        => ['cashback_percentage' => 5, 'cashback_redeem_threshold_fcfa' => 20000],
         ]);
         $card = $this->cardFor($restaurant, $program);
         $card->update(['cashback_balance_fcfa' => 10000]);
 
-        // Achat 10 000 FCFA, plafond 50% -> max 5 000 ; le client tente 6 000.
+        // Seuil 20 000 FCFA non atteint (solde 10 000) -> utilisation refusée.
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson("/api/merchant/clients/{$card->id}/redeem-cashback", [
                 'amount_fcfa'        => 10000,

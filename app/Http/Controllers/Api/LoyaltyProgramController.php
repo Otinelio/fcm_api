@@ -75,7 +75,7 @@ class LoyaltyProgramController extends Controller
                             ? ($data['fcfa_per_point'] ?? 100)
                             : null,
                         'cashback_percentage' => $isCashback ? $data['cashback_percentage'] : null,
-                        'cashback_redeem_cap_percent' => $isCashback ? ($data['cashback_redeem_cap_percent'] ?? null) : null,
+                        'cashback_redeem_threshold_fcfa' => $isCashback ? ($data['cashback_redeem_threshold_fcfa'] ?? null) : null,
                         // Expiration du solde cashback après N jours sans crédit
                         // (spec §4.1/§12, optionnelle) — `null` = pas d'expiration.
                         'cashback_expiry_days' => $isCashback ? ($data['cashback_expiry_days'] ?? null) : null,
