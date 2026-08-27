@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\DB;
@@ -16,7 +17,7 @@ use MatanYadaev\EloquentSpatial\Traits\HasSpatial;
  */
 class Restaurant extends Authenticatable
 {
-    use HasApiTokens, HasFactory, HasSpatial, Notifiable;
+    use HasApiTokens, HasFactory, HasSpatial, Notifiable, SoftDeletes;
 
     protected $table = 'restaurants';
 
@@ -45,6 +46,7 @@ class Restaurant extends Authenticatable
         'sms_credits',
         'short_code',
         'notification_preferences',
+        'opening_hours',
     ];
 
     protected $hidden = [
@@ -57,6 +59,7 @@ class Restaurant extends Authenticatable
             'password' => 'hashed',
             'location' => Point::class,
             'notification_preferences' => 'array',
+            'opening_hours' => 'array',
         ];
     }
 
@@ -103,6 +106,15 @@ class Restaurant extends Authenticatable
     public function hasLocation(): bool
     {
         return ! is_null($this->location);
+    }
+
+    /**
+     * Vrai si au moins un jour d'ouverture a été renseigné.
+     */
+    public function hasOpeningHours(): bool
+    {
+        return collect($this->opening_hours ?? [])
+            ->contains(fn ($day) => is_array($day) && ! empty($day['open']));
     }
 
     public function loyaltyProgram()

@@ -7,7 +7,6 @@ use App\Models\Restaurant;
 use App\Models\StaffUser;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 
 class TeamController extends Controller
@@ -24,12 +23,12 @@ class TeamController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'email', 'phone', 'role', 'is_active', 'created_at'])
             ->map(fn ($s) => [
-                'id'         => $s->id,
-                'name'       => $s->name,
-                'email'      => $s->email,
-                'phone'      => $s->phone,
-                'role'       => $s->role,
-                'is_active'  => $s->is_active,
+                'id' => $s->id,
+                'name' => $s->name,
+                'email' => $s->email,
+                'phone' => $s->phone,
+                'role' => $s->role,
+                'is_active' => $s->is_active,
                 'created_at' => $s->created_at?->toIso8601String(),
             ]);
 
@@ -45,26 +44,26 @@ class TeamController extends Controller
         $restaurant = $request->user();
 
         $request->validate([
-            'name'     => ['required', 'string', 'max:150'],
-            'email'    => ['required', 'email', Rule::unique('staff_users', 'email')],
-            'phone'    => ['nullable', 'string', 'max:30'],
+            'name' => ['required', 'string', 'max:150'],
+            'email' => ['required', 'email', Rule::unique('staff_users', 'email')],
+            'phone' => ['nullable', 'string', 'max:30'],
             'password' => ['required', 'string', 'min:8'],
-            'role'     => ['required', Rule::in(['admin', 'operator'])],
+            'role' => ['required', Rule::in(['admin', 'operator'])],
         ], [
             'email.unique' => 'Cette adresse est déjà utilisée par un membre de l\'équipe.',
         ]);
 
         $staff = $restaurant->staffUsers()->create([
-            'name'     => $request->name,
-            'email'    => $request->email,
-            'phone'    => $request->phone,
+            'name' => $request->name,
+            'email' => $request->email,
+            'phone' => $request->phone,
             'password' => $request->password,
-            'role'     => $request->role,
+            'role' => $request->role,
         ]);
 
         return response()->json([
             'message' => 'Membre de l\'équipe ajouté.',
-            'staff'   => [
+            'staff' => [
                 'id' => $staff->id, 'name' => $staff->name, 'email' => $staff->email,
                 'phone' => $staff->phone, 'role' => $staff->role, 'is_active' => $staff->is_active,
             ],
@@ -79,15 +78,28 @@ class TeamController extends Controller
         $restaurant = $this->authorizeStaff($request, $staffUser);
 
         $request->validate([
-            'name'     => ['sometimes', 'string', 'max:150'],
-            'phone'    => ['sometimes', 'nullable', 'string', 'max:30'],
-            'role'     => ['sometimes', Rule::in(['admin', 'operator'])],
+            'name' => ['sometimes', 'string', 'max:150'],
+            'phone' => ['sometimes', 'nullable', 'string', 'max:30'],
+            'role' => ['sometimes', Rule::in(['admin', 'operator'])],
             'password' => ['sometimes', 'string', 'min:8'],
         ]);
 
         $data = $request->only(['name', 'phone', 'role']);
         if ($request->filled('password')) {
             $data['password'] = $request->password;
+        }
+
+        // Rétrogradation d'un admin : on s'assure qu'il en reste au moins
+        // un autre actif, sinon la gestion d'équipe devient impossible.
+        if (($data['role'] ?? $staffUser->role) !== 'admin'
+            && $staffUser->role === 'admin'
+            && $staffUser->is_active
+        ) {
+            if (! $this->hasOtherActiveAdmin($restaurant, $staffUser)) {
+                return response()->json([
+                    'message' => 'Impossible de rétrograder le dernier administrateur actif.',
+                ], 422);
+            }
         }
 
         $staffUser->update($data);
@@ -111,6 +123,16 @@ class TeamController extends Controller
 
         $request->validate(['is_active' => ['required', 'boolean']]);
 
+        // Désactivation du dernier admin actif : refus, sinon plus personne
+        // ne peut gérer l'équipe ni valider les actions sensibles.
+        if ($staffUser->role === 'admin' && $staffUser->is_active && ! $request->boolean('is_active')) {
+            if (! $this->hasOtherActiveAdmin($restaurant, $staffUser)) {
+                return response()->json([
+                    'message' => 'Impossible de désactiver le dernier administrateur actif.',
+                ], 422);
+            }
+        }
+
         $staffUser->update(['is_active' => $request->boolean('is_active')]);
 
         if (! $staffUser->is_active) {
@@ -130,6 +152,15 @@ class TeamController extends Controller
         abort_if($staffUser->restaurant_id !== $restaurant->id, 404);
 
         return $restaurant;
+    }
+
+    private function hasOtherActiveAdmin(Restaurant $restaurant, StaffUser $except): bool
+    {
+        return $restaurant->staffUsers()
+            ->where('id', '!=', $except->id)
+            ->where('role', 'admin')
+            ->where('is_active', true)
+            ->exists();
     }
 
     /**

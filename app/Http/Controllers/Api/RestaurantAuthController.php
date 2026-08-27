@@ -13,6 +13,8 @@ use App\Http\Requests\Auth\UpdateLogoRequest;
 use App\Http\Requests\Auth\VerifyResetOtpRestaurantRequest;
 use App\Models\Restaurant;
 use App\Services\Auth\SocialAuthService;
+use App\Support\CurrentActor;
+use App\Support\RestaurantPayload;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -21,16 +23,17 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use MatanYadaev\EloquentSpatial\Objects\Point;
 
 class RestaurantAuthController extends Controller
 {
     private const DEFAULT_NOTIFICATION_PREFERENCES = [
-        'new_client'    => true,
-        'reward'        => true,
-        'low_sms'       => true,
+        'new_client' => true,
+        'reward' => true,
+        'low_sms' => true,
         'weekly_report' => false,
-        'promotions'    => false,
+        'promotions' => false,
     ];
 
     public function __construct(
@@ -47,17 +50,17 @@ class RestaurantAuthController extends Controller
     public function register(RegisterRestaurantRequest $request): JsonResponse
     {
         $restaurant = Restaurant::create([
-            'email'    => $request->email,
+            'email' => $request->email,
             'password' => $request->password, // Cast 'hashed' dans le modèle
         ]);
 
         $token = $restaurant->createToken('merchant-app')->plainTextToken;
 
         return response()->json([
-            'message'          => 'Inscription réussie.',
-            'access_token'     => $token,
-            'token_type'       => 'Bearer',
-            'restaurant'       => $this->restaurantData($restaurant, $request),
+            'message' => 'Inscription réussie.',
+            'access_token' => $token,
+            'token_type' => 'Bearer',
+            'restaurant' => $this->restaurantData($restaurant, $request),
         ], 201);
     }
 
@@ -103,10 +106,10 @@ class RestaurantAuthController extends Controller
         $token = $restaurant->createToken('merchant-app')->plainTextToken;
 
         return response()->json([
-            'message'      => 'Connexion réussie.',
+            'message' => 'Connexion réussie.',
             'access_token' => $token,
-            'token_type'   => 'Bearer',
-            'restaurant'   => $this->restaurantData($restaurant, $request),
+            'token_type' => 'Bearer',
+            'restaurant' => $this->restaurantData($restaurant, $request),
         ]);
     }
 
@@ -149,10 +152,10 @@ class RestaurantAuthController extends Controller
         $token = $restaurant->createToken('merchant-app')->plainTextToken;
 
         return response()->json([
-            'message'      => $isNew ? 'Compte créé via ' . $request->provider . '.' : 'Connexion réussie.',
+            'message' => $isNew ? 'Compte créé via '.$request->provider.'.' : 'Connexion réussie.',
             'access_token' => $token,
-            'token_type'   => 'Bearer',
-            'restaurant'   => $this->restaurantData($restaurant, $request),
+            'token_type' => 'Bearer',
+            'restaurant' => $this->restaurantData($restaurant, $request),
         ], $isNew ? 201 : 200);
     }
 
@@ -176,7 +179,7 @@ class RestaurantAuthController extends Controller
         $restaurant->update($data);
 
         return response()->json([
-            'message'    => 'Informations du commerce mises à jour.',
+            'message' => 'Informations du commerce mises à jour.',
             'restaurant' => $this->restaurantData($restaurant->fresh(), $request),
         ]);
     }
@@ -207,10 +210,10 @@ class RestaurantAuthController extends Controller
 
         // Chemin déterministe (logos/{uuid}.{ext}) : un ré-upload avec la même
         // extension produirait la même URL, servie en cache côté client sinon.
-        $restaurant->update(['logo_url' => asset(Storage::url($path)) . '?v=' . now()->timestamp]);
+        $restaurant->update(['logo_url' => asset(Storage::url($path)).'?v='.now()->timestamp]);
 
         return response()->json([
-            'message'    => 'Logo mis à jour.',
+            'message' => 'Logo mis à jour.',
             'restaurant' => $this->restaurantData($restaurant->fresh(), $request),
         ]);
     }
@@ -227,7 +230,7 @@ class RestaurantAuthController extends Controller
         $restaurant->update(['logo_url' => null]);
 
         return response()->json([
-            'message'    => 'Logo supprimé.',
+            'message' => 'Logo supprimé.',
             'restaurant' => $this->restaurantData($restaurant->fresh(), $request),
         ]);
     }
@@ -264,7 +267,7 @@ class RestaurantAuthController extends Controller
         ]);
 
         return response()->json([
-            'message'    => 'Formule mise à jour.',
+            'message' => 'Formule mise à jour.',
             'restaurant' => $this->restaurantData($restaurant->fresh(), $request),
         ]);
     }
@@ -318,19 +321,19 @@ class RestaurantAuthController extends Controller
             'current_password' => 'required|string',
         ]);
 
-        $actor = \App\Support\CurrentActor::resolve($request);
+        $actor = CurrentActor::resolve($request);
         $hashed = $actor->staffUser?->password ?? $request->user()->password;
 
         if (! Hash::check($request->current_password, $hashed)) {
             return response()->json([
                 'message' => 'Le mot de passe est incorrect.',
-                'valid'   => false,
+                'valid' => false,
             ], 422);
         }
 
         return response()->json([
             'message' => 'Mot de passe vérifié.',
-            'valid'   => true,
+            'valid' => true,
         ]);
     }
 
@@ -344,10 +347,10 @@ class RestaurantAuthController extends Controller
     {
         $request->validate([
             'current_password' => 'required|string',
-            'password'         => 'required|string|min:8|confirmed',
+            'password' => 'required|string|min:8|confirmed',
         ]);
 
-        $actor = \App\Support\CurrentActor::resolve($request);
+        $actor = CurrentActor::resolve($request);
         $target = $actor->staffUser ?? $request->user();
 
         if (! Hash::check($request->current_password, $target->password)) {
@@ -369,6 +372,76 @@ class RestaurantAuthController extends Controller
         ]);
     }
 
+    // ─────────────────────────────────────────────────────────
+    // Email / Account deletion — authentifié, admin
+    // ─────────────────────────────────────────────────────────
+
+    /**
+     * PUT /api/auth/merchant/email
+     *
+     * Change l'email du commerce. Exige le mot de passe actuel (les comptes
+     * OAuth n'en ont pas : ils doivent passer par leur provider).
+     */
+    public function updateEmail(Request $request): JsonResponse
+    {
+        $request->validate([
+            'email' => ['required', 'email', 'max:255', Rule::unique('restaurants', 'email')],
+            'current_password' => ['required', 'string'],
+        ], [
+            'email.unique' => 'Cette adresse e-mail est déjà utilisée par un autre commerce.',
+        ]);
+
+        /** @var Restaurant $restaurant */
+        $restaurant = $request->user();
+
+        if (! Hash::check($request->current_password, (string) $restaurant->password)) {
+            return response()->json([
+                'message' => 'Le mot de passe actuel est incorrect.',
+            ], 422);
+        }
+
+        $restaurant->update(['email' => $request->email]);
+
+        return response()->json([
+            'message' => 'Adresse e-mail mise à jour.',
+            'restaurant' => $this->restaurantData($restaurant->fresh(), $request),
+        ]);
+    }
+
+    /**
+     * DELETE /api/auth/merchant/account
+     *
+     * Suppression SOFT du compte : la ligne reste en base (historique
+     * fidélité conservé pour l'anti-fraude) mais tous les tokens sont
+     * révoqués et le login devient impossible. Exige le mot de passe.
+     */
+    public function deleteAccount(Request $request): JsonResponse
+    {
+        $request->validate([
+            'current_password' => ['required', 'string'],
+        ]);
+
+        /** @var Restaurant $restaurant */
+        $restaurant = $request->user();
+
+        if (! Hash::check($request->current_password, (string) $restaurant->password)) {
+            return response()->json([
+                'message' => 'Le mot de passe actuel est incorrect.',
+            ], 422);
+        }
+
+        DB::transaction(function () use ($restaurant) {
+            // Tous les tokens appartiennent au Restaurant (voir CurrentActor)
+            // : cette révocation déconnecte aussi chaque membre de l'équipe.
+            $restaurant->tokens()->delete();
+            $restaurant->delete(); // SoftDeletes
+        });
+
+        return response()->json([
+            'message' => 'Votre compte a été supprimé. Vos données de fidélité sont conservées de manière sécurisée.',
+        ]);
+    }
+
     /**
      * PUT /api/auth/merchant/notification-preferences
      *
@@ -379,11 +452,11 @@ class RestaurantAuthController extends Controller
     public function updateNotificationPreferences(Request $request): JsonResponse
     {
         $request->validate([
-            'new_client'    => ['sometimes', 'boolean'],
-            'reward'        => ['sometimes', 'boolean'],
-            'low_sms'       => ['sometimes', 'boolean'],
+            'new_client' => ['sometimes', 'boolean'],
+            'reward' => ['sometimes', 'boolean'],
+            'low_sms' => ['sometimes', 'boolean'],
             'weekly_report' => ['sometimes', 'boolean'],
-            'promotions'    => ['sometimes', 'boolean'],
+            'promotions' => ['sometimes', 'boolean'],
         ]);
 
         /** @var Restaurant $restaurant */
@@ -398,7 +471,7 @@ class RestaurantAuthController extends Controller
         ]);
 
         return response()->json([
-            'message'    => 'Préférences mises à jour.',
+            'message' => 'Préférences mises à jour.',
             'restaurant' => $this->restaurantData($restaurant->fresh(), $request),
         ]);
     }
@@ -411,7 +484,7 @@ class RestaurantAuthController extends Controller
     {
         $otp = (string) random_int(100000, 999999);
 
-        Cache::put('otp_reset_merchant_' . $request->email, $otp, now()->addMinutes(10));
+        Cache::put('otp_reset_merchant_'.$request->email, $otp, now()->addMinutes(10));
 
         Log::info("Code OTP de réinitialisation marchand pour {$request->email} : {$otp}");
 
@@ -426,7 +499,7 @@ class RestaurantAuthController extends Controller
 
     public function verifyResetOtp(VerifyResetOtpRestaurantRequest $request): JsonResponse
     {
-        $cachedOtp = Cache::get('otp_reset_merchant_' . $request->email);
+        $cachedOtp = Cache::get('otp_reset_merchant_'.$request->email);
 
         if (! $cachedOtp || $cachedOtp !== $request->otp) {
             return response()->json([
@@ -435,18 +508,18 @@ class RestaurantAuthController extends Controller
         }
 
         $resetToken = (string) Str::uuid();
-        Cache::put('reset_token_merchant_' . $request->email, $resetToken, now()->addMinutes(15));
-        Cache::forget('otp_reset_merchant_' . $request->email);
+        Cache::put('reset_token_merchant_'.$request->email, $resetToken, now()->addMinutes(15));
+        Cache::forget('otp_reset_merchant_'.$request->email);
 
         return response()->json([
-            'message'     => 'Code vérifié avec succès.',
+            'message' => 'Code vérifié avec succès.',
             'reset_token' => $resetToken,
         ]);
     }
 
     public function resetPassword(ResetPasswordRestaurantRequest $request): JsonResponse
     {
-        $cachedToken = Cache::get('reset_token_merchant_' . $request->email);
+        $cachedToken = Cache::get('reset_token_merchant_'.$request->email);
 
         if (! $cachedToken || $cachedToken !== $request->reset_token) {
             return response()->json([
@@ -460,7 +533,7 @@ class RestaurantAuthController extends Controller
             'password' => Hash::make($request->password),
         ]);
 
-        Cache::forget('reset_token_merchant_' . $request->email);
+        Cache::forget('reset_token_merchant_'.$request->email);
         $restaurant->tokens()->delete();
 
         return response()->json([
@@ -475,8 +548,8 @@ class RestaurantAuthController extends Controller
     private function restaurantData(Restaurant $restaurant, Request $request): array
     {
         return [
-            ...\App\Support\RestaurantPayload::build($restaurant),
-            'actor' => \App\Support\CurrentActor::resolve($request)->toArray(),
+            ...RestaurantPayload::build($restaurant),
+            'actor' => CurrentActor::resolve($request)->toArray(),
         ];
     }
 }

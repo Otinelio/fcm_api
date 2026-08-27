@@ -22,9 +22,9 @@ class RewardRedemptionTest extends TestCase
     private function restaurantWithToken(): array
     {
         $restaurant = Restaurant::create([
-            'name'     => 'Chez Awa',
+            'name' => 'Chez Awa',
             'category' => 'Restaurant',
-            'email'    => 'commerce@example.com',
+            'email' => 'commerce@example.com',
             'password' => bcrypt('password123'),
         ]);
         $token = $restaurant->createToken('merchant-app')->plainTextToken;
@@ -35,17 +35,17 @@ class RewardRedemptionTest extends TestCase
     private function cardFor(Restaurant $restaurant, LoyaltyProgram $program): LoyaltyCard
     {
         $client = Client::create([
-            'uuid'       => (string) Str::uuid(),
+            'uuid' => (string) Str::uuid(),
             'first_name' => 'Ada',
-            'phone'      => '+22890000001',
-            'password'   => bcrypt('secret123'),
+            'phone' => '+22890000001',
+            'password' => bcrypt('secret123'),
         ]);
 
         return LoyaltyCard::create([
-            'client_id'          => $client->id,
-            'restaurant_id'      => $restaurant->id,
+            'client_id' => $client->id,
+            'restaurant_id' => $restaurant->id,
             'loyalty_program_id' => $program->id,
-            'progress'           => ['stamps_current' => 0],
+            'progress' => ['stamps_current' => 0],
         ]);
     }
 
@@ -54,9 +54,9 @@ class RewardRedemptionTest extends TestCase
         [$restaurant, $token] = $this->restaurantWithToken();
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id,
-            'name'          => 'Programme',
-            'type'          => 'stamps',
-            'config'        => ['goal' => 1, 'reward_description' => 'Burger offert'],
+            'name' => 'Programme',
+            'type' => 'stamps',
+            'config' => ['goal' => 1, 'reward_description' => 'Burger offert'],
         ]);
         $card = $this->cardFor($restaurant, $program);
 
@@ -65,9 +65,9 @@ class RewardRedemptionTest extends TestCase
 
         $this->assertDatabaseHas('loyalty_rewards', [
             'loyalty_card_id' => $card->id,
-            'restaurant_id'   => $restaurant->id,
-            'title'           => 'Burger offert',
-            'status'          => 'available',
+            'restaurant_id' => $restaurant->id,
+            'title' => 'Burger offert',
+            'status' => 'available',
         ]);
     }
 
@@ -76,9 +76,9 @@ class RewardRedemptionTest extends TestCase
         [$restaurant, $token] = $this->restaurantWithToken();
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id,
-            'name'          => 'Programme',
-            'type'          => 'stamps',
-            'config'        => ['goal' => 1, 'reward_description' => 'Burger offert'],
+            'name' => 'Programme',
+            'type' => 'stamps',
+            'config' => ['goal' => 1, 'reward_description' => 'Burger offert'],
         ]);
         $card = $this->cardFor($restaurant, $program);
         $this->withHeader('Authorization', "Bearer {$token}")
@@ -91,9 +91,10 @@ class RewardRedemptionTest extends TestCase
         $lookup->assertOk();
         $lookup->assertJsonPath('reward.title', 'Burger offert');
         $lookup->assertJsonPath('reward.status', 'available');
+        $lookup->assertJsonPath('reward.token', $reward->redeem_token);
 
         $redeem = $this->withHeader('Authorization', "Bearer {$token}")
-            ->postJson("/api/merchant/rewards/{$reward->id}/redeem");
+            ->postJson("/api/merchant/rewards/{$reward->id}/redeem", ['token' => $reward->redeem_token]);
         $redeem->assertOk();
         $redeem->assertJsonPath('reward.status', 'used');
         $this->assertSame('used', $reward->fresh()->status);
@@ -105,9 +106,9 @@ class RewardRedemptionTest extends TestCase
         [$restaurant, $token] = $this->restaurantWithToken();
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id,
-            'name'          => 'Programme',
-            'type'          => 'stamps',
-            'config'        => ['goal' => 1],
+            'name' => 'Programme',
+            'type' => 'stamps',
+            'config' => ['goal' => 1],
         ]);
         $card = $this->cardFor($restaurant, $program);
         $this->withHeader('Authorization', "Bearer {$token}")
@@ -115,11 +116,39 @@ class RewardRedemptionTest extends TestCase
         $reward = LoyaltyReward::first();
 
         $this->withHeader('Authorization', "Bearer {$token}")
-            ->postJson("/api/merchant/rewards/{$reward->id}/redeem")->assertOk();
+            ->postJson("/api/merchant/rewards/{$reward->id}/redeem", ['token' => $reward->redeem_token])->assertOk();
 
         $second = $this->withHeader('Authorization', "Bearer {$token}")
-            ->postJson("/api/merchant/rewards/{$reward->id}/redeem");
+            ->postJson("/api/merchant/rewards/{$reward->id}/redeem", ['token' => $reward->redeem_token]);
         $second->assertStatus(422);
+    }
+
+    public function test_redeeming_with_a_wrong_token_is_rejected(): void
+    {
+        [$restaurant, $token] = $this->restaurantWithToken();
+        $program = LoyaltyProgram::create([
+            'restaurant_id' => $restaurant->id,
+            'name' => 'Programme',
+            'type' => 'stamps',
+            'config' => ['goal' => 1],
+        ]);
+        $card = $this->cardFor($restaurant, $program);
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson("/api/merchant/clients/{$card->id}/stamps")->assertOk();
+        $reward = LoyaltyReward::first();
+
+        // Sans token : rejet immédiat, la récompense reste disponible.
+        $missing = $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson("/api/merchant/rewards/{$reward->id}/redeem");
+        $missing->assertStatus(422);
+        $this->assertSame('available', $reward->fresh()->status);
+
+        // Avec un token qui n'est pas celui du QR scanné : même rejet.
+        $wrong = $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson("/api/merchant/rewards/{$reward->id}/redeem", ['token' => 'MIVAFID-REWARD:forged-token']);
+        $wrong->assertStatus(422);
+        $wrong->assertJsonPath('message', 'Code de récompense invalide.');
+        $this->assertSame('available', $reward->fresh()->status);
     }
 
     public function test_redeeming_an_expired_reward_is_rejected(): void
@@ -127,9 +156,9 @@ class RewardRedemptionTest extends TestCase
         [$restaurant, $token] = $this->restaurantWithToken();
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id,
-            'name'          => 'Programme',
-            'type'          => 'stamps',
-            'config'        => ['goal' => 1, 'reward_validity_days' => 1],
+            'name' => 'Programme',
+            'type' => 'stamps',
+            'config' => ['goal' => 1, 'reward_validity_days' => 1],
         ]);
         $card = $this->cardFor($restaurant, $program);
         $this->withHeader('Authorization', "Bearer {$token}")
@@ -140,7 +169,7 @@ class RewardRedemptionTest extends TestCase
         $this->assertTrue($reward->fresh()->is_expired);
 
         $response = $this->withHeader('Authorization', "Bearer {$token}")
-            ->postJson("/api/merchant/rewards/{$reward->id}/redeem");
+            ->postJson("/api/merchant/rewards/{$reward->id}/redeem", ['token' => $reward->redeem_token]);
         $response->assertStatus(422);
         $this->assertSame('available', $reward->fresh()->status);
     }
@@ -156,9 +185,9 @@ class RewardRedemptionTest extends TestCase
 
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurantA->id,
-            'name'          => 'Programme',
-            'type'          => 'stamps',
-            'config'        => ['goal' => 1],
+            'name' => 'Programme',
+            'type' => 'stamps',
+            'config' => ['goal' => 1],
         ]);
         $card = $this->cardFor($restaurantA, $program);
         $this->withHeader('Authorization', "Bearer {$tokenA}")
@@ -176,7 +205,7 @@ class RewardRedemptionTest extends TestCase
         $lookup->assertStatus(404);
 
         $redeem = $this->withHeader('Authorization', "Bearer {$tokenB}")
-            ->postJson("/api/merchant/rewards/{$reward->id}/redeem");
+            ->postJson("/api/merchant/rewards/{$reward->id}/redeem", ['token' => $reward->redeem_token]);
         $redeem->assertStatus(403);
     }
 
@@ -185,9 +214,9 @@ class RewardRedemptionTest extends TestCase
         [$restaurant, $token] = $this->restaurantWithToken();
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id,
-            'name'          => 'Programme',
-            'type'          => 'stamps',
-            'config'        => ['goal' => 1],
+            'name' => 'Programme',
+            'type' => 'stamps',
+            'config' => ['goal' => 1],
         ]);
         $card = $this->cardFor($restaurant, $program);
         $this->withHeader('Authorization', "Bearer {$token}")
@@ -200,7 +229,7 @@ class RewardRedemptionTest extends TestCase
         $this->assertSame('canceled', $reward->fresh()->status);
 
         $redeem = $this->withHeader('Authorization', "Bearer {$token}")
-            ->postJson("/api/merchant/rewards/{$reward->id}/redeem");
+            ->postJson("/api/merchant/rewards/{$reward->id}/redeem", ['token' => $reward->redeem_token]);
         $redeem->assertStatus(422);
     }
 
@@ -209,9 +238,9 @@ class RewardRedemptionTest extends TestCase
         [$restaurant, $token] = $this->restaurantWithToken();
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id,
-            'name'          => 'Programme',
-            'type'          => 'stamps',
-            'config'        => ['goal' => 1, 'reward_description' => 'Café offert'],
+            'name' => 'Programme',
+            'type' => 'stamps',
+            'config' => ['goal' => 1, 'reward_description' => 'Café offert'],
         ]);
         $card = $this->cardFor($restaurant, $program);
         $this->withHeader('Authorization', "Bearer {$token}")

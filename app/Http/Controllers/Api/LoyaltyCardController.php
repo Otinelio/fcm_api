@@ -83,10 +83,10 @@ class LoyaltyCardController extends Controller
         $card->load(['restaurant', 'loyaltyProgram']);
 
         return response()->json([
-            'message'              => $wasRecentlyCreated
+            'message' => $wasRecentlyCreated
                 ? 'Carte de fidélité rejointe.'
                 : 'Vous êtes déjà membre de ce commerce.',
-            'card'                 => $card,
+            'card' => $card,
             'was_recently_created' => $wasRecentlyCreated,
         ], 201);
     }
@@ -116,7 +116,9 @@ class LoyaltyCardController extends Controller
      * inventés). Ne renvoie pas les lignes `cycle_completed` : ce sont un
      * signal technique interne (comptage des cycles pour les niveaux), pas
      * une opération que le client a "faite" — la ligne `stamp`/`cashback_*`
-     * correspondante suffit à raconter l'historique.
+     * correspondante suffit à raconter l'historique. Les `stamp_reversal`
+     * (retraits de tampons par le marchand) sont en revanche affichées :
+     * append-only, le client voit le gain ET son retrait.
      */
     public function history(Request $request, LoyaltyCard $loyaltyCard): JsonResponse
     {
@@ -128,7 +130,7 @@ class LoyaltyCardController extends Controller
 
         $entries = DB::table('loyalty_transactions')
             ->where('loyalty_card_id', $loyaltyCard->id)
-            ->whereIn('type', ['stamp', 'cashback_earn', 'cashback_redeem'])
+            ->whereIn('type', ['stamp', 'stamp_reversal', 'cashback_earn', 'cashback_redeem'])
             ->where('status', 'valid')
             // `created_at` seul ne départage pas deux opérations survenues à
             // la même seconde (ex. crédit de points puis usage du cashback
@@ -155,10 +157,10 @@ class LoyaltyCardController extends Controller
         };
 
         $entries = $entries->map(fn ($row) => [
-            'type'                  => $row->type,
-            'value'                 => $numeric($row->value),
+            'type' => $row->type,
+            'value' => $numeric($row->value),
             'montant_commande_fcfa' => $numeric($row->montant_commande_fcfa),
-            'created_at'            => $row->created_at,
+            'created_at' => $row->created_at,
         ]);
 
         return response()->json(['history' => $entries]);

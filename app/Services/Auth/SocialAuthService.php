@@ -4,14 +4,14 @@ namespace App\Services\Auth;
 
 use App\Models\Client;
 use App\Models\Restaurant;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Str;
-use Firebase\JWT\JWT;
 use Firebase\JWT\JWK;
+use Firebase\JWT\JWT;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use InvalidArgumentException;
-use Kreait\Firebase\JWT\IdTokenVerifier;
 use Kreait\Firebase\JWT\Error\IdTokenVerificationFailed;
+use Kreait\Firebase\JWT\IdTokenVerifier;
 
 class SocialAuthService
 {
@@ -23,12 +23,13 @@ class SocialAuthService
      * Valide un ID token Firebase et retourne les données utilisateur.
      *
      * @return array{sub: string, email: string|null, name: string|null, given_name: string|null, family_name: string|null, picture: string|null}
+     *
      * @throws InvalidArgumentException
      */
     public function validateFirebaseToken(string $idToken): array
     {
         $projectId = config('services.firebase.project_id');
-        
+
         if (empty($projectId)) {
             throw new \RuntimeException('Erreur serveur : FIREBASE_PROJECT_ID non configuré.');
         }
@@ -44,7 +45,7 @@ class SocialAuthService
             );
             $payload = $token->payload();
         } catch (IdTokenVerificationFailed $e) {
-            throw new InvalidArgumentException('Token Firebase invalide ou expiré : ' . $e->getMessage());
+            throw new InvalidArgumentException('Token Firebase invalide ou expiré : '.$e->getMessage());
         }
 
         if (empty($payload['sub'])) {
@@ -55,23 +56,23 @@ class SocialAuthService
         // `given_name`/`family_name` dans `firebase.identities`, mais pas
         // toujours : on découpe `name` en dernier recours pour ne pas créer un
         // client dont le prénom contient le nom entier.
-        $fullName   = $payload['name'] ?? null;
-        $givenName  = $payload['given_name'] ?? null;
+        $fullName = $payload['name'] ?? null;
+        $givenName = $payload['given_name'] ?? null;
         $familyName = $payload['family_name'] ?? null;
 
         if ($givenName === null && $fullName !== null) {
-            $parts      = preg_split('/\s+/', trim($fullName), 2);
-            $givenName  = $parts[0] ?? null;
+            $parts = preg_split('/\s+/', trim($fullName), 2);
+            $givenName = $parts[0] ?? null;
             $familyName = $familyName ?? ($parts[1] ?? null);
         }
 
         return [
-            'sub'         => $payload['sub'], // C'est l'UID Firebase de l'utilisateur
-            'email'       => $payload['email'] ?? null,
-            'name'        => $fullName,
-            'given_name'  => $givenName,
+            'sub' => $payload['sub'], // C'est l'UID Firebase de l'utilisateur
+            'email' => $payload['email'] ?? null,
+            'name' => $fullName,
+            'given_name' => $givenName,
             'family_name' => $familyName,
-            'picture'     => $payload['picture'] ?? null,
+            'picture' => $payload['picture'] ?? null,
         ];
     }
 
@@ -86,6 +87,7 @@ class SocialAuthService
      * On récupère les clés JWKS, on décode et valide le JWT.
      *
      * @return array{sub: string, email: string|null, name: string|null}
+     *
      * @throws InvalidArgumentException
      */
     public function validateAppleToken(string $idToken): array
@@ -133,15 +135,15 @@ class SocialAuthService
             }
 
             return [
-                'sub'   => $decoded->sub,
+                'sub' => $decoded->sub,
                 'email' => $decoded->email ?? null,
-                'name'  => null, // Apple ne renvoie le nom que lors de la première connexion (via le SDK)
+                'name' => null, // Apple ne renvoie le nom que lors de la première connexion (via le SDK)
             ];
         } catch (\Exception $e) {
             if ($e instanceof InvalidArgumentException) {
                 throw $e;
             }
-            throw new InvalidArgumentException('Token Apple invalide : ' . $e->getMessage());
+            throw new InvalidArgumentException('Token Apple invalide : '.$e->getMessage());
         }
     }
 
@@ -180,25 +182,25 @@ class SocialAuthService
             $existing = Client::where('email', $email)->first();
 
             if ($existing) {
-                throw new \InvalidArgumentException($existing->authMethodDeniedMessage());
+                throw new InvalidArgumentException($existing->authMethodDeniedMessage());
             }
         }
 
         // 3. Créer un nouveau client (profil partiel — sera complété à l'étape 2)
-        if (!$allowCreation) {
-            throw new \InvalidArgumentException('Aucun compte n\'est associé à cette adresse email.');
+        if (! $allowCreation) {
+            throw new InvalidArgumentException('Aucun compte n\'est associé à cette adresse email.');
         }
 
         $client = Client::create([
-            'uuid'           => (string) Str::uuid(),
-            'first_name'     => $firstName ?? '',
-            'last_name'      => $lastName,
-            'email'          => $email,
-            'phone'          => null, // Sera complété dans completeSocialProfile
-            'password'       => null, // Utilisateurs OAuth n'ont pas de mot de passe
-            'avatar_url'     => $avatarUrl,
+            'uuid' => (string) Str::uuid(),
+            'first_name' => $firstName ?? '',
+            'last_name' => $lastName,
+            'email' => $email,
+            'phone' => null, // Sera complété dans completeSocialProfile
+            'password' => null, // Utilisateurs OAuth n'ont pas de mot de passe
+            'avatar_url' => $avatarUrl,
             'oauth_provider' => $provider,
-            'oauth_id'       => $oauthId,
+            'oauth_id' => $oauthId,
         ]);
 
         return ['client' => $client, 'is_new' => true];
@@ -233,23 +235,33 @@ class SocialAuthService
 
         // Un compte trouvé par email garde sa méthode d'authentification
         // d'origine : jamais de liaison silencieuse à une identité OAuth.
+        // On regarde aussi les comptes supprimés (soft delete) : ils ne
+        // doivent ni être reconnectés, ni provoquer une collision SQL.
         if ($email) {
             $existing = Restaurant::where('email', $email)->first();
 
             if ($existing) {
-                throw new \InvalidArgumentException($existing->authMethodDeniedMessage());
+                throw new InvalidArgumentException($existing->authMethodDeniedMessage());
+            }
+
+            $deleted = Restaurant::onlyTrashed()->where('email', $email)->exists();
+
+            if ($deleted) {
+                throw new InvalidArgumentException(
+                    'Ce compte a été supprimé. Créez un nouveau compte ou contactez le support.'
+                );
             }
         }
 
-        if (!$allowCreation) {
-            throw new \InvalidArgumentException('Aucun compte n\'est associé à cette adresse email.');
+        if (! $allowCreation) {
+            throw new InvalidArgumentException('Aucun compte n\'est associé à cette adresse email.');
         }
 
         $restaurant = Restaurant::create([
-            'email'          => $email,
-            'password'       => null, // Comptes OAuth : pas de mot de passe
+            'email' => $email,
+            'password' => null, // Comptes OAuth : pas de mot de passe
             'oauth_provider' => $provider,
-            'oauth_id'       => $oauthId,
+            'oauth_id' => $oauthId,
         ]);
 
         return ['restaurant' => $restaurant, 'is_new' => true];
@@ -263,14 +275,15 @@ class SocialAuthService
      * Valide un token en fonction du provider.
      *
      * @return array{sub: string, email: string|null, name: string|null, ...}
+     *
      * @throws InvalidArgumentException
      */
     public function validateToken(string $provider, string $idToken): array
     {
         return match ($provider) {
             'google' => $this->validateFirebaseToken($idToken),
-            'apple'  => $this->validateAppleToken($idToken),
-            default  => throw new InvalidArgumentException("Provider non supporté : {$provider}"),
+            'apple' => $this->validateAppleToken($idToken),
+            default => throw new InvalidArgumentException("Provider non supporté : {$provider}"),
         };
     }
 }

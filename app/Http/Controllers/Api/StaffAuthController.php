@@ -20,7 +20,7 @@ class StaffAuthController extends Controller
     public function login(Request $request): JsonResponse
     {
         $request->validate([
-            'email'    => ['required', 'email'],
+            'email' => ['required', 'email'],
             'password' => ['required', 'string'],
         ]);
 
@@ -38,7 +38,16 @@ class StaffAuthController extends Controller
             ], 401);
         }
 
+        // Soft delete du restaurant : la relation renvoie null via le scope
+        // Eloquent par défaut — on bloque avant de créer un token orphelin.
         $restaurant = $staffUser->restaurant;
+
+        if ($restaurant === null) {
+            return response()->json([
+                'message' => 'Ce compte a été désactivé. Contactez votre administrateur.',
+            ], 401);
+        }
+
         $token = $restaurant->createToken(
             "staff:{$staffUser->id}",
             ["staff:{$staffUser->id}"],
@@ -46,12 +55,12 @@ class StaffAuthController extends Controller
 
         return response()->json([
             'access_token' => $token,
-            'token_type'   => 'Bearer',
-            'restaurant'   => [
+            'token_type' => 'Bearer',
+            'restaurant' => [
                 ...RestaurantPayload::build($restaurant),
                 'actor' => [
                     'type' => 'staff',
-                    'id'   => $staffUser->id,
+                    'id' => $staffUser->id,
                     'name' => $staffUser->name,
                     'role' => $staffUser->role,
                 ],

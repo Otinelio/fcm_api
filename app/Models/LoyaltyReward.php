@@ -2,7 +2,9 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Str;
 
 /**
@@ -16,6 +18,7 @@ class LoyaltyReward extends Model
 {
     protected $fillable = [
         'loyalty_card_id',
+        'loyalty_transaction_id',
         'program_tier_id',
         'restaurant_id',
         'title',
@@ -36,11 +39,17 @@ class LoyaltyReward extends Model
     {
         return [
             'unlocked_at' => 'datetime',
-            'expires_at'  => 'datetime',
-            'used_at'     => 'datetime',
+            'expires_at' => 'datetime',
+            'used_at' => 'datetime',
             'canceled_at' => 'datetime',
         ];
     }
+
+    /** Longueur du `redeem_token` (QR unique scanné par le marchand). */
+    private const REDEEM_TOKEN_LENGTH = 12;
+
+    /** Tentatives de régénération avant d'abandonner sur collision. */
+    private const REDEEM_TOKEN_RETRIES = 3;
 
     protected static function booted(): void
     {
@@ -53,11 +62,31 @@ class LoyaltyReward extends Model
 
     private static function generateRedeemToken(): string
     {
-        do {
-            $token = Str::upper(Str::random(6));
-        } while (self::where('redeem_token', $token)->exists());
+        return Str::upper(Str::random(self::REDEEM_TOKEN_LENGTH));
+    }
 
-        return $token;
+    /**
+     * Insertion avec retry atomique : pas de pré-vérification `exists()`
+     * (TOCTOU entre le check et l'insert) — on tente l'insert et, si la clé
+     * unique `redeem_token` rejette la ligne (collision), on régénère et
+     * retente. À 62^12 combinaisons, une seconde collision est improbable
+     * au point que 3 essais suffisent largement.
+     *
+     * {@inheritdoc}
+     */
+    protected function performInsert(Builder $query, array $options = [])
+    {
+        for ($attempt = 0; ; $attempt++) {
+            try {
+                return parent::performInsert($query, $options);
+            } catch (UniqueConstraintViolationException $exception) {
+                if ($attempt >= self::REDEEM_TOKEN_RETRIES - 1) {
+                    throw $exception;
+                }
+
+                $this->redeem_token = self::generateRedeemToken();
+            }
+        }
     }
 
     public function getIsExpiredAttribute(): bool

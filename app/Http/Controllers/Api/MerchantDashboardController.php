@@ -6,12 +6,16 @@ use App\Events\LoyaltyCardUpdated;
 use App\Events\LoyaltyRewardUpdated;
 use App\Http\Controllers\Controller;
 use App\Models\LoyaltyCard;
+use App\Models\LoyaltyProgram;
+use App\Models\LoyaltyReward;
 use App\Models\Restaurant;
 use App\Services\Loyalty\LoyaltyTierService;
+use App\Support\CurrentActor;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Dashboard marchand : clientèle, validation de tampons et statistiques.
@@ -25,17 +29,23 @@ class MerchantDashboardController extends Controller
     /**
      * GET /api/merchant/clients
      *
-     * Clientèle du commerce (une ligne par carte de fidélité).
-     * `q` filtre sur le nom/téléphone, `filter` sur l'ancienneté.
+     * Clientèle du commerce (une ligne par carte de fidélité), paginée.
+     *
+     * Paramètres :
+     * - `q` : recherche sur le nom/téléphone ;
+     * - `inactive_days` : inactifs depuis N jours (ou jamais actifs) ;
+     * - `level` : clé canonique de niveau (`bronze|silver|gold|platinum|custom`) ;
+     * - `min_cycles` : ayant terminé le programme au moins N fois ;
+     * - `sort` : `activity` (défaut) | `recent` | `oldest` ;
+     * - `page` / `per_page` : pagination (per_page plafonné à 100).
      */
     public function clients(Request $request): JsonResponse
     {
         $restaurant = $this->restaurant($request);
 
         $query = LoyaltyCard::query()
-            ->with('client')
-            ->where('restaurant_id', $restaurant->id)
-            ->orderByDesc('created_at');
+            ->with(['client', 'loyaltyProgram.tiers'])
+            ->where('restaurant_id', $restaurant->id);
 
         if ($search = trim((string) $request->query('q', ''))) {
             $query->whereHas('client', function ($q) use ($search) {
@@ -45,15 +55,56 @@ class MerchantDashboardController extends Controller
             });
         }
 
-        if ($request->query('filter') === 'inactive_30d') {
-            $query->where(function ($q) {
+        if (($inactiveDays = (int) $request->query('inactive_days', 0)) > 0) {
+            $limit = now()->subDays($inactiveDays);
+            $query->where(function ($q) use ($limit) {
                 $q->whereNull('last_activity_at')
-                    ->orWhere('last_activity_at', '<', now()->subDays(30));
+                    ->orWhere('last_activity_at', '<', $limit);
             });
         }
 
+        if (($minCycles = (int) $request->query('min_cycles', 0)) > 0) {
+            $query->where('cycles_completed', '>=', $minCycles);
+        }
+
+        match (trim((string) $request->query('sort', 'activity'))) {
+            'recent' => $query->orderByDesc('created_at'),
+            'oldest' => $query->orderBy('created_at'),
+            default => $query->orderByRaw('COALESCE(last_activity_at, created_at) DESC'),
+        };
+
+        $cards = $query->get();
+
+        // Filtre de niveau en PHP : le niveau courant est résolu depuis les
+        // paliers du programme (LoyaltyTierService), ce n'est pas une colonne
+        // requêtable en SQL. Les listes restant par-commerce, le volume reste
+        // raisonnable.
+        if ($levelKey = trim((string) $request->query('level', ''))) {
+            $tierService = app(LoyaltyTierService::class);
+            $cards = $cards
+                ->filter(fn (LoyaltyCard $card) => $tierService->levelKey($card->level['name'] ?? null) === $levelKey)
+                ->values();
+        }
+
+        $perPage = (int) $request->query('per_page', 25);
+        if ($perPage < 1) {
+            $perPage = 25;
+        }
+        $perPage = min($perPage, 100);
+        $page = max((int) $request->query('page', 1), 1);
+
         return response()->json([
-            'clients' => $query->get()->map(fn (LoyaltyCard $card) => $this->cardData($card))->all(),
+            'data' => $cards
+                ->forPage($page, $perPage)
+                ->values()
+                ->map(fn (LoyaltyCard $card) => $this->cardData($card))
+                ->all(),
+            'meta' => [
+                'current_page' => $page,
+                'last_page' => max(1, (int) ceil($cards->count() / $perPage)),
+                'per_page' => $perPage,
+                'total' => $cards->count(),
+            ],
         ]);
     }
 
@@ -111,7 +162,7 @@ class MerchantDashboardController extends Controller
     }
 
     /** FCFA par point en mode "Achat", si le programme n'a pas sa propre valeur. */
-    private const DEFAULT_FCFA_PER_POINT = 500;
+    private const DEFAULT_FCFA_PER_POINT = 100;
 
     /**
      * POST /api/merchant/clients/{loyaltyCard}/stamps
@@ -122,8 +173,9 @@ class MerchantDashboardController extends Controller
      *
      * En mode "Achat" (`spend`), le gain n'est plus un forfait de 1 : le
      * marchand saisit le montant réel (`amount_fcfa`), converti en points au
-     * taux du programme (`config.fcfa_per_point`, 500 par défaut — c'est le
-     * taux déjà annoncé au marchand pendant l'onboarding).
+     * taux du programme (`config.fcfa_per_point`, 100 par défaut — même
+     * valeur que `LoyaltyProgramController::store`, c'est le taux déjà
+     * annoncé au marchand pendant l'onboarding).
      */
     public function addStamp(Request $request, LoyaltyCard $loyaltyCard): JsonResponse
     {
@@ -166,6 +218,168 @@ class MerchantDashboardController extends Controller
     }
 
     /**
+     * DELETE /api/merchant/clients/{loyaltyCard}/stamps
+     *
+     * Retire le dernier tampon accordé sur cette carte (erreur de saisie,
+     * scan en double non intercepté...). Restaure `stamps_current` à sa
+     * valeur exacte d'avant ce gain (voir `meta.before` posé par
+     * `grantStampOrPoints`) et annule les récompenses qu'il avait
+     * débloquées — refusé si l'une d'elles a déjà été utilisée par le
+     * client, pour ne jamais lui reprendre un avantage déjà consommé.
+     *
+     * Append-only : la ligne `stamp` d'origine n'est JAMAIS mutée (aucun
+     * statut `canceled`) — le retrait est journalisé par une nouvelle ligne
+     * `stamp_reversal` (valeur négative, `meta.reverses_transaction_id`,
+     * opérateur identifié). L'historique marchand ET client montre donc à
+     * la fois le gain et son retrait, ce qui est l'exigence anti-fraude ;
+     * les lignes déjà inversées ne sont plus éligibles à un nouveau retrait.
+     */
+    public function removeStamp(Request $request, LoyaltyCard $loyaltyCard): JsonResponse
+    {
+        $this->authorizeCard($request, $loyaltyCard);
+
+        // Même verrou que `addStamp` : les deux opérations mutent
+        // `stamps_current` sur la même carte, elles ne doivent jamais
+        // s'exécuter en même temps.
+        $lock = Cache::lock("add-stamp:{$loyaltyCard->id}", 5);
+        if (! $lock->get()) {
+            return response()->json([
+                'message' => 'Validation déjà en cours pour cette carte, réessayez dans un instant.',
+            ], 409);
+        }
+
+        try {
+            // Ids des tampons déjà inversés par une reversal valide — lus
+            // depuis `meta` en PHP pour rester indépendants du driver SQL
+            // (SQLite en test, Postgres en dev).
+            $reversedIds = collect(DB::table('loyalty_transactions')
+                ->where('loyalty_card_id', $loyaltyCard->id)
+                ->where('type', 'stamp_reversal')
+                ->pluck('meta'))
+                ->map(fn ($meta) => json_decode((string) $meta, true)['reverses_transaction_id'] ?? null)
+                ->filter()
+                ->all();
+
+            $lastStamp = DB::table('loyalty_transactions')
+                ->where('loyalty_card_id', $loyaltyCard->id)
+                ->where('type', 'stamp')
+                ->where('status', 'valid')
+                ->when($reversedIds !== [], fn ($q) => $q->whereNotIn('id', $reversedIds))
+                ->orderByDesc('id')
+                ->first();
+
+            if (! $lastStamp) {
+                return response()->json(['message' => 'Aucun tampon à retirer.'], 422);
+            }
+
+            $rewards = LoyaltyReward::where('loyalty_transaction_id', $lastStamp->id)->get();
+
+            if ($rewards->contains(fn ($r) => $r->status === 'used')) {
+                return response()->json([
+                    'message' => 'Impossible de retirer ce tampon : la récompense qu\'il a débloquée a déjà été utilisée.',
+                ], 422);
+            }
+
+            $meta = $lastStamp->meta ? json_decode($lastStamp->meta, true) : null;
+            if (! is_array($meta) || ! array_key_exists('before', $meta)) {
+                return response()->json([
+                    'message' => 'Ce tampon a été accordé avant la mise à jour du système et ne peut pas être retiré automatiquement.',
+                ], 422);
+            }
+
+            $staffUserId = CurrentActor::resolve($request)->staffUser?->id;
+
+            // Nombre de cycles franchis par le gain qu'on retire (journalisé
+            // dans meta.cycles par grantStampOrPoints ; 0 pour les tampons
+            // antérieurs à cette colonne). Ces cycles doivent disparaître du
+            // compteur comme la progression et les récompenses associées.
+            $cyclesUndone = (int) ($meta['cycles'] ?? 0);
+
+            DB::transaction(function () use ($loyaltyCard, $lastStamp, $rewards, $meta, $staffUserId, $cyclesUndone) {
+                $progress = $loyaltyCard->progress ?? [];
+
+                // D'autres récompenses (d'un cycle antérieur) peuvent rester
+                // disponibles indépendamment de celles qu'on annule ici.
+                $stillAvailable = LoyaltyReward::where('loyalty_card_id', $loyaltyCard->id)
+                    ->where('status', 'available')
+                    ->whereNotIn('id', $rewards->pluck('id'))
+                    ->exists();
+
+                $loyaltyCard->update([
+                    'progress' => array_merge($progress, ['stamps_current' => $meta['before']]),
+                    'status' => $stillAvailable ? 'reward_available' : 'active',
+                    'completed_at' => null,
+                    'last_activity_at' => now(),
+                    'cycles_completed' => max(0, (int) $loyaltyCard->cycles_completed - $cyclesUndone),
+                ]);
+
+                foreach ($rewards as $reward) {
+                    // `loyalty_transaction_id` reste pointé sur la ligne
+                    // stamp ORIGINALE : c'est bien « la transaction qui a
+                    // débloqué la récompense » (sémantique de la colonne,
+                    // cf. migration). Le fait qu'elle soit annulée se lit
+                    // via `canceled_*` + la reversal liée dans l'historique.
+                    $reward->update([
+                        'status' => 'canceled',
+                        'canceled_at' => now(),
+                        'cancel_reason' => 'Tampon retiré par le marchand',
+                        'canceled_by_staff_user_id' => $staffUserId,
+                    ]);
+                }
+
+                // Append-only : nouvelle ligne inverse plutôt que mutation
+                // de la ligne d'origine. Valeur négative = miroir exact du
+                // gain ; `reverses_transaction_id` permet de retrouver la
+                // paire gain/retrait dans l'audit.
+                DB::table('loyalty_transactions')->insert([
+                    'loyalty_card_id' => $loyaltyCard->id,
+                    'type' => 'stamp_reversal',
+                    'value' => -abs((float) $lastStamp->value),
+                    'validation_method' => 'merchant_app',
+                    'status' => 'valid',
+                    'staff_user_id' => $staffUserId,
+                    'meta' => json_encode(['reverses_transaction_id' => $lastStamp->id]),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+                // Annule les signaux `cycle_completed` générés par le gain
+                // retiré (les plus récents d'abord) — append-only : statut
+                // `canceled`, jamais de suppression.
+                if ($cyclesUndone > 0) {
+                    $cycleIds = DB::table('loyalty_transactions')
+                        ->where('loyalty_card_id', $loyaltyCard->id)
+                        ->where('type', 'cycle_completed')
+                        ->where('status', 'valid')
+                        ->orderByDesc('id')
+                        ->limit($cyclesUndone)
+                        ->pluck('id');
+
+                    if ($cycleIds->isNotEmpty()) {
+                        DB::table('loyalty_transactions')
+                            ->whereIn('id', $cycleIds)
+                            ->update(['status' => 'canceled', 'updated_at' => now()]);
+                    }
+                }
+            });
+
+            $freshCard = $loyaltyCard->fresh()->load(['client', 'loyaltyProgram']);
+            LoyaltyCardUpdated::dispatch($freshCard);
+
+            foreach ($rewards as $reward) {
+                LoyaltyRewardUpdated::dispatch($reward->fresh()->load('loyaltyCard.client'));
+            }
+
+            return response()->json([
+                'message' => 'Tampon retiré.',
+                'client' => $this->cardData($freshCard),
+            ]);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
      * Mode Cashback : crédite un pourcentage du montant de l'achat en solde
      * utilisable — pas de cycle, pas de récompense, pas de reset.
      */
@@ -173,7 +387,7 @@ class MerchantDashboardController extends Controller
         Request $request,
         Restaurant $restaurant,
         LoyaltyCard $loyaltyCard,
-        \App\Models\LoyaltyProgram $program,
+        LoyaltyProgram $program,
     ): JsonResponse {
         $request->validate([
             'amount_fcfa' => ['required', 'numeric', 'min:1'],
@@ -189,7 +403,7 @@ class MerchantDashboardController extends Controller
         $percentage = (float) ($program->config['cashback_percentage'] ?? 0);
         $earnedFcfa = round($amountFcfa * $percentage / 100, 2);
 
-        $staffUserId = \App\Support\CurrentActor::resolve($request)->staffUser?->id;
+        $staffUserId = CurrentActor::resolve($request)->staffUser?->id;
         $restaurantId = $restaurant->id;
         $createdRewardIds = [];
 
@@ -198,30 +412,30 @@ class MerchantDashboardController extends Controller
         ) {
             $loyaltyCard->update([
                 'cashback_balance_fcfa' => $loyaltyCard->cashback_balance_fcfa + $earnedFcfa,
-                'last_activity_at'      => now(),
+                'last_activity_at' => now(),
             ]);
 
             DB::table('loyalty_transactions')->insert([
-                'loyalty_card_id'       => $loyaltyCard->id,
-                'type'                  => 'cashback_earn',
-                'value'                 => $earnedFcfa,
+                'loyalty_card_id' => $loyaltyCard->id,
+                'type' => 'cashback_earn',
+                'value' => $earnedFcfa,
                 'montant_commande_fcfa' => $amountFcfa,
-                'validation_method'     => 'merchant_app',
-                'status'                => 'valid',
-                'staff_user_id'         => $staffUserId,
-                'created_at'            => now(),
-                'updated_at'            => now(),
+                'validation_method' => 'merchant_app',
+                'status' => 'valid',
+                'staff_user_id' => $staffUserId,
+                'created_at' => now(),
+                'updated_at' => now(),
             ]);
 
             $metricAfter = $metricBefore + $earnedFcfa;
             foreach ($this->crossedTiers($tiers, $metricBefore, $metricAfter) as $tier) {
-                $reward = \App\Models\LoyaltyReward::create([
+                $reward = LoyaltyReward::create([
                     'loyalty_card_id' => $loyaltyCard->id,
-                    'restaurant_id'   => $restaurantId,
+                    'restaurant_id' => $restaurantId,
                     'program_tier_id' => $tier['id'],
-                    'title'           => $tier['reward_description'],
-                    'unlocked_at'     => now(),
-                    'expires_at'      => $tier['validity_days'] ? now()->addDays((int) $tier['validity_days']) : null,
+                    'title' => $tier['reward_description'],
+                    'unlocked_at' => now(),
+                    'expires_at' => $tier['validity_days'] ? now()->addDays((int) $tier['validity_days']) : null,
                 ]);
                 $createdRewardIds[] = $reward->id;
             }
@@ -230,17 +444,17 @@ class MerchantDashboardController extends Controller
         $freshCard = $loyaltyCard->fresh()->load(['client', 'loyaltyProgram']);
         LoyaltyCardUpdated::dispatch($freshCard);
 
-        foreach (\App\Models\LoyaltyReward::whereIn('id', $createdRewardIds)->get() as $reward) {
+        foreach (LoyaltyReward::whereIn('id', $createdRewardIds)->get() as $reward) {
             $reward->setRelation('loyaltyCard', $freshCard);
             LoyaltyRewardUpdated::dispatch($reward);
         }
 
         return response()->json([
-            'message'         => number_format($earnedFcfa, 0, ',', ' ') . ' FCFA de cashback crédités.',
+            'message' => number_format($earnedFcfa, 0, ',', ' ').' FCFA de cashback crédités.',
             'reward_unlocked' => count($createdRewardIds) > 0,
             'rewards_unlocked_count' => count($createdRewardIds),
             'cashback_earned' => $earnedFcfa,
-            'client'          => $this->cardData($freshCard),
+            'client' => $this->cardData($freshCard),
         ]);
     }
 
@@ -252,7 +466,7 @@ class MerchantDashboardController extends Controller
      * - 2+ paliers : chacun ne peut être franchi qu'une fois dans la vie de
      *   la carte (seuils strictement croissants), plafonné au dernier.
      *
-     * @param array $tiers Depuis `LoyaltyTierService::tiers()`.
+     * @param  array  $tiers  Depuis `LoyaltyTierService::tiers()`.
      * @return array Sous-ensemble de `$tiers` (avec doublons possibles si mono-palier).
      */
     private function crossedTiers(array $tiers, float $before, float $after): array
@@ -294,22 +508,15 @@ class MerchantDashboardController extends Controller
         }
 
         $request->validate([
-            'amount_fcfa'        => ['required', 'numeric', 'min:1'],
+            'amount_fcfa' => ['required', 'numeric', 'min:1'],
             'redeem_amount_fcfa' => ['required', 'numeric', 'min:1'],
         ], [
-            'amount_fcfa.required'        => 'Le montant de l\'achat est requis.',
+            'amount_fcfa.required' => 'Le montant de l\'achat est requis.',
             'redeem_amount_fcfa.required' => 'Le montant de cashback à utiliser est requis.',
         ]);
 
         $amountFcfa = (float) $request->input('amount_fcfa');
         $redeemAmount = (float) $request->input('redeem_amount_fcfa');
-        $balance = $loyaltyCard->cashback_available_fcfa;
-
-        if ($redeemAmount > $balance) {
-            return response()->json([
-                'message' => 'Solde cashback insuffisant.',
-            ], 422);
-        }
 
         // Indépendant du plafond configurable (`cashback_redeem_cap_percent`,
         // optionnel) : cette règle s'applique toujours, même sans plafond
@@ -330,8 +537,11 @@ class MerchantDashboardController extends Controller
             }
         }
 
-        $staffUserId = \App\Support\CurrentActor::resolve($request)->staffUser?->id;
+        $staffUserId = CurrentActor::resolve($request)->staffUser?->id;
 
+        // Le verrou est acquis AVANT toute lecture du solde : vérifier le
+        // solde avant la zone protégée laisserait deux requêtes simultanées
+        // valider contre le même montant et débiter deux fois (TOCTOU).
         $lock = Cache::lock("redeem-cashback:{$loyaltyCard->id}", 5);
         if (! $lock->get()) {
             return response()->json([
@@ -341,21 +551,34 @@ class MerchantDashboardController extends Controller
 
         try {
             DB::transaction(function () use ($loyaltyCard, $redeemAmount, $amountFcfa, $staffUserId) {
-                $loyaltyCard->update([
+                // Rechargement de la carte sous `LockForUpdate` : c'est ce
+                // solde frais — pas celui lu hors verrou — qui est comparé.
+                $card = LoyaltyCard::query()
+                    ->whereKey($loyaltyCard->id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($card === null || $redeemAmount > $card->cashback_available_fcfa) {
+                    throw ValidationException::withMessages([
+                        'redeem_amount_fcfa' => 'Solde cashback insuffisant.',
+                    ]);
+                }
+
+                $card->update([
                     'cashback_balance_fcfa' => $loyaltyCard->cashback_balance_fcfa - $redeemAmount,
-                    'last_activity_at'      => now(),
+                    'last_activity_at' => now(),
                 ]);
 
                 DB::table('loyalty_transactions')->insert([
-                    'loyalty_card_id'       => $loyaltyCard->id,
-                    'type'                  => 'cashback_redeem',
-                    'value'                 => $redeemAmount,
+                    'loyalty_card_id' => $loyaltyCard->id,
+                    'type' => 'cashback_redeem',
+                    'value' => $redeemAmount,
                     'montant_commande_fcfa' => $amountFcfa,
-                    'validation_method'     => 'merchant_app',
-                    'status'                => 'valid',
-                    'staff_user_id'         => $staffUserId,
-                    'created_at'            => now(),
-                    'updated_at'            => now(),
+                    'validation_method' => 'merchant_app',
+                    'status' => 'valid',
+                    'staff_user_id' => $staffUserId,
+                    'created_at' => now(),
+                    'updated_at' => now(),
                 ]);
             });
         } finally {
@@ -367,7 +590,7 @@ class MerchantDashboardController extends Controller
 
         return response()->json([
             'message' => 'Cashback utilisé.',
-            'client'  => $this->cardData($freshCard),
+            'client' => $this->cardData($freshCard),
         ]);
     }
 
@@ -384,7 +607,10 @@ class MerchantDashboardController extends Controller
         $entries = DB::table('loyalty_transactions')
             ->leftJoin('staff_users', 'staff_users.id', '=', 'loyalty_transactions.staff_user_id')
             ->where('loyalty_transactions.loyalty_card_id', $loyaltyCard->id)
-            ->whereIn('loyalty_transactions.type', ['stamp', 'cashback_earn', 'cashback_redeem'])
+            // `stamp_reversal` : le retrait d'un tampon est une opération
+            // à part entière de l'historique anti-fraude — il doit être
+            // visible, pas masqué par la mutation silencieuse du gain.
+            ->whereIn('loyalty_transactions.type', ['stamp', 'stamp_reversal', 'cashback_earn', 'cashback_redeem'])
             ->where('loyalty_transactions.status', 'valid')
             ->orderByDesc('loyalty_transactions.created_at')
             ->orderByDesc('loyalty_transactions.id')
@@ -408,12 +634,12 @@ class MerchantDashboardController extends Controller
         };
 
         $history = $entries->map(fn ($row) => [
-            'type'                  => $row->type,
-            'value'                 => $numeric($row->value),
+            'type' => $row->type,
+            'value' => $numeric($row->value),
             'montant_commande_fcfa' => $numeric($row->montant_commande_fcfa),
-            'created_at'            => $row->created_at,
-            'staff_name'            => $row->staff_name,
-            'staff_role'            => $row->staff_role,
+            'created_at' => $row->created_at,
+            'staff_name' => $row->staff_name,
+            'staff_role' => $row->staff_role,
         ]);
 
         return response()->json(['history' => $history]);
@@ -423,7 +649,7 @@ class MerchantDashboardController extends Controller
         Request $request,
         Restaurant $restaurant,
         LoyaltyCard $loyaltyCard,
-        \App\Models\LoyaltyProgram $program,
+        LoyaltyProgram $program,
     ): JsonResponse {
         $isSpendMode = $program->type === 'spend';
         $amountFcfa = null;
@@ -508,42 +734,52 @@ class MerchantDashboardController extends Controller
             $best = collect($unlockedTiers)->sortByDesc('order')->first();
             if ($best !== null && (int) $loyaltyCard->max_level_order < (int) $best['order']) {
                 $maxLevelUpdate = [
-                    'max_level_name'       => $best['level_name'],
-                    'max_level_order'      => $best['order'],
+                    'max_level_name' => $best['level_name'],
+                    'max_level_order' => $best['order'],
                     'max_level_reached_at' => now(),
                 ];
             }
         }
 
-        $staffUserId = \App\Support\CurrentActor::resolve($request)->staffUser?->id;
+        $staffUserId = CurrentActor::resolve($request)->staffUser?->id;
         $restaurantId = $restaurant->id;
         $createdRewardIds = [];
 
         DB::transaction(function () use (
-            $loyaltyCard, $progress, $current, $rewardUnlocked, $unlockedTiers,
+            $loyaltyCard, $progress, $before, $current, $rewardUnlocked, $unlockedTiers,
             $cardCompleted, $fullCyclesCompleted, $cycleGoal, $maxLevelUpdate,
             $earned, $amountFcfa, $restaurantId, $staffUserId, &$createdRewardIds,
         ) {
             $loyaltyCard->update(array_merge(
                 [
-                    'progress'         => array_merge($progress, ['stamps_current' => $current]),
-                    'status'           => $rewardUnlocked ? 'reward_available' : 'active',
+                    'progress' => array_merge($progress, ['stamps_current' => $current]),
+                    'status' => $rewardUnlocked ? 'reward_available' : 'active',
                     'last_activity_at' => now(),
+                    // Compteur à vie de cycles terminés — sert au filtrage
+                    // marchand ; décrémenté par removeStamp via meta.cycles.
+                    'cycles_completed' => $loyaltyCard->cycles_completed + $fullCyclesCompleted,
                 ],
                 $cardCompleted ? ['completed_at' => now()] : [],
                 $maxLevelUpdate,
             ));
 
-            DB::table('loyalty_transactions')->insert([
-                'loyalty_card_id'        => $loyaltyCard->id,
-                'type'                   => 'stamp',
-                'value'                  => $earned,
-                'montant_commande_fcfa'  => $amountFcfa,
-                'validation_method'      => 'merchant_app',
-                'status'                 => 'valid',
-                'staff_user_id'          => $staffUserId,
-                'created_at'             => now(),
-                'updated_at'             => now(),
+            // `meta.before`/`meta.after` capture le `stamps_current` juste
+            // avant/après ce gain — c'est ce qui permet à `removeStamp` de
+            // restaurer l'état exact sans avoir à rejouer la logique de
+            // cycle/boucle en sens inverse. `meta.cycles` journalise les
+            // cycles franchis par CE gain : removeStamp annulera exactement
+            // autant de lignes `cycle_completed` et décrémentera le compteur.
+            $stampTransactionId = DB::table('loyalty_transactions')->insertGetId([
+                'loyalty_card_id' => $loyaltyCard->id,
+                'type' => 'stamp',
+                'value' => $earned,
+                'montant_commande_fcfa' => $amountFcfa,
+                'validation_method' => 'merchant_app',
+                'status' => 'valid',
+                'staff_user_id' => $staffUserId,
+                'meta' => json_encode(['before' => $before, 'after' => $current, 'cycles' => $fullCyclesCompleted]),
+                'created_at' => now(),
+                'updated_at' => now(),
             ]);
 
             // Signal historique de fin de cycle — vaut aussi bien pour un
@@ -551,24 +787,26 @@ class MerchantDashboardController extends Controller
             // dernier cycle unique) désormais.
             for ($i = 0; $i < $fullCyclesCompleted; $i++) {
                 DB::table('loyalty_transactions')->insert([
-                    'loyalty_card_id'   => $loyaltyCard->id,
-                    'type'              => 'cycle_completed',
-                    'value'             => $cycleGoal,
+                    'loyalty_card_id' => $loyaltyCard->id,
+                    'type' => 'cycle_completed',
+                    'value' => $cycleGoal,
                     'validation_method' => 'merchant_app',
-                    'status'            => 'valid',
-                    'created_at'        => now(),
-                    'updated_at'        => now(),
+                    'status' => 'valid',
+                    'staff_user_id' => $staffUserId, // même traçabilité opérateur que les autres insertions
+                    'created_at' => now(),
+                    'updated_at' => now(),
                 ]);
             }
 
             foreach ($unlockedTiers as $tier) {
-                $reward = \App\Models\LoyaltyReward::create([
+                $reward = LoyaltyReward::create([
                     'loyalty_card_id' => $loyaltyCard->id,
-                    'restaurant_id'   => $restaurantId,
+                    'loyalty_transaction_id' => $stampTransactionId,
+                    'restaurant_id' => $restaurantId,
                     'program_tier_id' => $tier['id'],
-                    'title'           => $tier['reward_description'],
-                    'unlocked_at'     => now(),
-                    'expires_at'      => $tier['validity_days'] ? now()->addDays((int) $tier['validity_days']) : null,
+                    'title' => $tier['reward_description'],
+                    'unlocked_at' => now(),
+                    'expires_at' => $tier['validity_days'] ? now()->addDays((int) $tier['validity_days']) : null,
                 ]);
                 $createdRewardIds[] = $reward->id;
             }
@@ -583,7 +821,7 @@ class MerchantDashboardController extends Controller
 
         // Une récompense fraîchement débloquée doit apparaître dans l'écran
         // "Mes récompenses" du client sans qu'il n'ait à tirer pour rafraîchir.
-        foreach (\App\Models\LoyaltyReward::whereIn('id', $createdRewardIds)->get() as $reward) {
+        foreach (LoyaltyReward::whereIn('id', $createdRewardIds)->get() as $reward) {
             $reward->setRelation('loyaltyCard', $freshCard);
             LoyaltyRewardUpdated::dispatch($reward);
         }
@@ -596,12 +834,12 @@ class MerchantDashboardController extends Controller
         };
 
         return response()->json([
-            'message'                => $message,
-            'reward_unlocked'        => $rewardUnlocked,
+            'message' => $message,
+            'reward_unlocked' => $rewardUnlocked,
             'rewards_unlocked_count' => $cyclesCompleted,
-            'points_earned'          => $earned,
-            'program_completed'      => $cardCompleted,
-            'client'                 => $this->cardData($freshCard),
+            'points_earned' => $earned,
+            'program_completed' => $cardCompleted,
+            'client' => $this->cardData($freshCard),
         ]);
     }
 
@@ -616,7 +854,7 @@ class MerchantDashboardController extends Controller
         $request->validate(['token' => ['required', 'string']]);
         $restaurant = $this->restaurant($request);
 
-        $reward = \App\Models\LoyaltyReward::query()
+        $reward = LoyaltyReward::query()
             ->with('loyaltyCard.client')
             ->where('restaurant_id', $restaurant->id)
             ->where('redeem_token', trim($request->query('token')))
@@ -628,16 +866,24 @@ class MerchantDashboardController extends Controller
             ], 404);
         }
 
-        return response()->json(['reward' => $this->rewardData($reward)]);
+        return response()->json(['reward' => $this->rewardData($reward, withToken: true)]);
     }
 
     /**
      * POST /api/merchant/rewards/{loyaltyReward}/redeem
      */
-    public function redeemReward(Request $request, \App\Models\LoyaltyReward $loyaltyReward): JsonResponse
+    public function redeemReward(Request $request, LoyaltyReward $loyaltyReward): JsonResponse
     {
         $restaurant = $this->restaurant($request);
         abort_if($loyaltyReward->restaurant_id !== $restaurant->id, 403, 'Cette récompense ne concerne pas votre commerce.');
+
+        $request->validate(['token' => ['required', 'string']]);
+
+        if (! hash_equals((string) $loyaltyReward->redeem_token, (string) $request->input('token'))) {
+            return response()->json([
+                'message' => 'Code de récompense invalide.',
+            ], 422);
+        }
 
         $lock = Cache::lock("redeem-reward:{$loyaltyReward->id}", 5);
         if (! $lock->get()) {
@@ -656,9 +902,9 @@ class MerchantDashboardController extends Controller
             }
 
             $loyaltyReward->update([
-                'status'               => 'used',
-                'used_at'              => now(),
-                'used_by_staff_user_id' => \App\Support\CurrentActor::resolve($request)->staffUser?->id,
+                'status' => 'used',
+                'used_at' => now(),
+                'used_by_staff_user_id' => CurrentActor::resolve($request)->staffUser?->id,
             ]);
         } finally {
             $lock->release();
@@ -669,39 +915,52 @@ class MerchantDashboardController extends Controller
 
         return response()->json([
             'message' => 'Récompense validée.',
-            'reward'  => $this->rewardData($freshReward),
+            'reward' => $this->rewardData($freshReward),
         ]);
     }
 
     /**
      * POST /api/merchant/rewards/{loyaltyReward}/cancel
      */
-    public function cancelReward(Request $request, \App\Models\LoyaltyReward $loyaltyReward): JsonResponse
+    public function cancelReward(Request $request, LoyaltyReward $loyaltyReward): JsonResponse
     {
         $restaurant = $this->restaurant($request);
         abort_if($loyaltyReward->restaurant_id !== $restaurant->id, 403, 'Cette récompense ne concerne pas votre commerce.');
 
-        if ($loyaltyReward->status !== 'available') {
-            return response()->json([
-                'message' => 'Seule une récompense encore disponible peut être annulée.',
-            ], 422);
-        }
-
         $request->validate(['reason' => ['nullable', 'string', 'max:255']]);
 
-        $loyaltyReward->update([
-            'status'                    => 'canceled',
-            'canceled_at'               => now(),
-            'cancel_reason'             => $request->input('reason'),
-            'canceled_by_staff_user_id' => \App\Support\CurrentActor::resolve($request)->staffUser?->id,
-        ]);
+        $lock = Cache::lock("cancel-reward:{$loyaltyReward->id}", 5);
+        if (! $lock->get()) {
+            return response()->json([
+                'message' => 'Annulation déjà en cours pour cette récompense, réessayez dans un instant.',
+            ], 409);
+        }
+
+        try {
+            // Relecture sous verrou : une validation concurrente peut avoir
+            // changé le statut entre le binding de route et l'acquisition.
+            if ($loyaltyReward->refresh()->status !== 'available') {
+                return response()->json([
+                    'message' => 'Seule une récompense encore disponible peut être annulée.',
+                ], 422);
+            }
+
+            $loyaltyReward->update([
+                'status' => 'canceled',
+                'canceled_at' => now(),
+                'cancel_reason' => $request->input('reason'),
+                'canceled_by_staff_user_id' => CurrentActor::resolve($request)->staffUser?->id,
+            ]);
+        } finally {
+            $lock->release();
+        }
 
         $freshReward = $loyaltyReward->fresh()->load('loyaltyCard.client');
         LoyaltyRewardUpdated::dispatch($freshReward);
 
         return response()->json([
             'message' => 'Récompense annulée.',
-            'reward'  => $this->rewardData($freshReward),
+            'reward' => $this->rewardData($freshReward),
         ]);
     }
 
@@ -714,11 +973,17 @@ class MerchantDashboardController extends Controller
 
         $cardIds = LoyaltyCard::where('restaurant_id', $restaurant->id)->pluck('id');
 
-        $stampsToday = DB::table('loyalty_transactions')
+        // Seuls les vrais gains comptent : type `stamp` (tampons ET points,
+        // même type interne) — les lignes `cycle_completed` et `cashback_*`
+        // ne sont pas des tampons. Une reversal du jour compense son gain
+        // (net = ce que le marchand a réellement accordé aujourd'hui).
+        $stampsToday = (int) (DB::table('loyalty_transactions')
             ->whereIn('loyalty_card_id', $cardIds)
+            ->whereIn('type', ['stamp', 'stamp_reversal'])
             ->where('status', 'valid')
             ->whereDate('created_at', now()->toDateString())
-            ->count();
+            ->selectRaw("COALESCE(SUM(CASE WHEN type = 'stamp' THEN 1 ELSE -1 END), 0) as total")
+            ->value('total'));
 
         $recent = LoyaltyCard::query()
             ->with('client')
@@ -729,15 +994,15 @@ class MerchantDashboardController extends Controller
             ->get()
             ->map(fn (LoyaltyCard $card) => [
                 'client_name' => $this->clientName($card),
-                'action'      => 'Tampon accordé',
-                'at'          => $card->last_activity_at?->toIso8601String(),
+                'action' => $this->activityLabel($card),
+                'at' => $card->last_activity_at?->toIso8601String(),
             ])
             ->all();
 
         return response()->json([
-            'total_clients'   => $cardIds->count(),
-            'stamps_today'    => $stampsToday,
-            'active_rewards'  => LoyaltyCard::whereIn('id', $cardIds)
+            'total_clients' => $cardIds->count(),
+            'stamps_today' => $stampsToday,
+            'active_rewards' => LoyaltyCard::whereIn('id', $cardIds)
                 ->where('status', 'reward_available')
                 ->count(),
             'recent_activity' => $recent,
@@ -754,6 +1019,27 @@ class MerchantDashboardController extends Controller
         $restaurant = $request->user();
 
         return $restaurant;
+    }
+
+    /** Libellé de la dernière activité réelle de la carte (pas un hardcode). */
+    private function activityLabel(LoyaltyCard $card): string
+    {
+        $lastType = DB::table('loyalty_transactions')
+            ->where('loyalty_card_id', $card->id)
+            ->orderByDesc('id')
+            ->value('type');
+
+        return match ($lastType) {
+            'stamp_reversal' => 'Tampon retiré',
+            'cashback_earn' => 'Cashback crédité',
+            'cashback_redeem' => 'Cashback utilisé',
+            'cycle_completed' => 'Cycle terminé',
+            // `stamp` couvre tampons ET points (même type interne) — le
+            // libellé dépend du type de programme.
+            default => $card->loyaltyProgram?->type === 'spend'
+                ? 'Points accordés'
+                : 'Tampon accordé',
+        };
     }
 
     /** Refuse l'accès à une carte qui n'appartient pas au commerce connecté. */
@@ -779,54 +1065,63 @@ class MerchantDashboardController extends Controller
     private function cardData(LoyaltyCard $card): array
     {
         return [
-            'id'               => (string) $card->id,
-            'client_id'        => (string) $card->client_id,
-            'restaurant_id'    => (string) $card->restaurant_id,
-            'card_code'        => $card->card_code,
-            'stamps_current'   => (int) ($card->progress['stamps_current'] ?? 0),
+            'id' => (string) $card->id,
+            'client_id' => (string) $card->client_id,
+            'restaurant_id' => (string) $card->restaurant_id,
+            'card_code' => $card->card_code,
+            'stamps_current' => (int) ($card->progress['stamps_current'] ?? 0),
             'cashback_balance_fcfa' => $card->cashback_available_fcfa,
-            'status'           => $card->status,
-            'level'            => $card->level,
+            'status' => $card->status,
+            'level' => $card->level,
+            'cycles_completed' => (int) $card->cycles_completed,
             'reward_available' => $card->status === 'reward_available',
             'program_completed' => $card->completed_at !== null,
-            'max_level'        => $card->max_level_name ? [
-                'name'        => $card->max_level_name,
-                'reached_at'  => $card->max_level_reached_at?->toIso8601String(),
+            'max_level' => $card->max_level_name ? [
+                'name' => $card->max_level_name,
+                'reached_at' => $card->max_level_reached_at?->toIso8601String(),
             ] : null,
             'last_activity_at' => $card->last_activity_at?->toIso8601String(),
-            'created_at'       => $card->created_at?->toIso8601String(),
-            'client'           => $card->client ? [
-                'id'         => (string) $card->client->id,
-                'uuid'       => $card->client->uuid,
-                'name'       => $this->clientName($card),
+            'created_at' => $card->created_at?->toIso8601String(),
+            'client' => $card->client ? [
+                'id' => (string) $card->client->id,
+                'uuid' => $card->client->uuid,
+                'name' => $this->clientName($card),
                 'first_name' => $card->client->first_name,
-                'last_name'  => $card->client->last_name,
-                'phone'      => $card->client->phone,
-                'email'      => $card->client->email,
-                'city'       => $card->client->city,
-                'country'    => $card->client->country,
-                'birthdate'  => $card->client->birthdate?->toDateString(),
+                'last_name' => $card->client->last_name,
+                'phone' => $card->client->phone,
+                'email' => $card->client->email,
+                'city' => $card->client->city,
+                'country' => $card->client->country,
+                'birthdate' => $card->client->birthdate?->toDateString(),
                 'avatar_url' => $card->client->avatar_url,
             ] : null,
         ];
     }
 
-    private function rewardData(\App\Models\LoyaltyReward $reward): array
+    private function rewardData(LoyaltyReward $reward, bool $withToken = false): array
     {
         $card = $reward->loyaltyCard;
 
-        return [
-            'id'           => (string) $reward->id,
-            'title'        => $reward->title,
-            'status'       => $reward->status,
-            'is_expired'   => $reward->is_expired,
-            'unlocked_at'  => $reward->unlocked_at?->toIso8601String(),
-            'expires_at'   => $reward->expires_at?->toIso8601String(),
-            'used_at'      => $reward->used_at?->toIso8601String(),
-            'client'       => $card?->client ? [
-                'name'  => $this->clientName($card),
+        $data = [
+            'id' => (string) $reward->id,
+            'title' => $reward->title,
+            'status' => $reward->status,
+            'is_expired' => $reward->is_expired,
+            'unlocked_at' => $reward->unlocked_at?->toIso8601String(),
+            'expires_at' => $reward->expires_at?->toIso8601String(),
+            'used_at' => $reward->used_at?->toIso8601String(),
+            'client' => $card?->client ? [
+                'name' => $this->clientName($card),
                 'phone' => $card->client->phone,
             ] : null,
         ];
+
+        // Jeton QR exposé uniquement au lookup (le scan en est la source) —
+        // jamais dans les réponses de liste ou de mutation.
+        if ($withToken) {
+            $data['token'] = $reward->redeem_token;
+        }
+
+        return $data;
     }
 }
