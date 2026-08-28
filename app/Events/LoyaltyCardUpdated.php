@@ -11,10 +11,14 @@ use Illuminate\Queue\SerializesModels;
 
 /**
  * Diffusé après chaque validation marchand (tampon/point/montant) — permet
- * au wallet client de se mettre à jour en direct, sans pull-to-refresh.
- * Canal privé `loyalty.{clientId}` déjà autorisé dans routes/channels.php
- * (à ne pas confondre avec `App\Events\StampAdded`/`LoyaltyPointAdded`,
- * squelettes de prototype jamais branchés, laissés tels quels).
+ * au wallet client ET au dashboard marchand de se mettre à jour en direct,
+ * sans pull-to-refresh. Diffusé sur DEUX canaux privés, déjà autorisés dans
+ * routes/channels.php : `loyalty.{clientId}` (wallet/historique client) et
+ * `merchant.{restaurantId}` (liste clients/fiche client marchand) — même
+ * payload des deux côtés, les deux parties ont déjà accès à ces champs via
+ * l'API REST (`MerchantDashboardController::cardData`) (à ne pas confondre
+ * avec `App\Events\StampAdded`/`LoyaltyPointAdded`, squelettes de prototype
+ * jamais branchés, laissés tels quels).
  */
 class LoyaltyCardUpdated implements ShouldBroadcast
 {
@@ -26,7 +30,10 @@ class LoyaltyCardUpdated implements ShouldBroadcast
 
     public function broadcastOn(): array
     {
-        return [new PrivateChannel('loyalty.' . $this->card->client_id)];
+        return [
+            new PrivateChannel('loyalty.' . $this->card->client_id),
+            new PrivateChannel('merchant.' . $this->card->restaurant_id),
+        ];
     }
 
     public function broadcastAs(): string

@@ -34,6 +34,13 @@ class StoreLoyaltyProgramRequest extends FormRequest
             // Seuil de solde cashback (FCFA) à atteindre avant que le client
             // puisse l'utiliser — remplace l'ancien plafond en % du ticket.
             'cashback_redeem_threshold_fcfa' => ['nullable', 'numeric', 'min:0', 'max:100000000'],
+            // Base de calcul des paliers cashback : `cumulative` (défaut,
+            // cashback cumulé à vie, ne redescend jamais) ou `balance` (solde
+            // disponible en direct, peut redescendre si le client l'utilise).
+            // Un seul réglage pour tout le programme, jamais par palier — les
+            // paliers partagent une roadmap unique (niveau/pourcentage), qui
+            // suppose une seule métrique croissante et triable.
+            'cashback_tier_basis'    => ['nullable', 'string', 'in:cumulative,balance'],
             // Expiration du solde cashback (jours sans crédit) — optionnelle.
             'cashback_expiry_days'    => ['nullable', 'integer', 'min:1', 'max:3650'],
             // Taux de conversion mode "Achat" (FCFA pour 1 point) — 100 par
@@ -70,7 +77,9 @@ class StoreLoyaltyProgramRequest extends FormRequest
             // `LoyaltyTierService`). Palette (`TierIconPalette`) définie côté
             // Flutter uniquement : on reste permissif ici, comme `level_name`.
             'tiers.*.icon_key'            => ['nullable', 'string', 'max:100'],
-            'tiers.*.reward_description'  => ['required', 'string', 'max:255'],
+            // Optionnelle pour cashback (un palier peut ne servir qu'à
+            // attribuer un niveau) ; reste obligatoire pour stamps/spend.
+            'tiers.*.reward_description'  => ['required_unless:mode,cashback', 'nullable', 'string', 'max:255'],
             // Récompense "surprise" propre à ce palier — `false` = contenu
             // masqué côté client jusqu'au déblocage réel. Défaut `true`.
             'tiers.*.reveal_reward'       => ['sometimes', 'boolean'],

@@ -277,7 +277,15 @@ class LoyaltyTierServiceTest extends TestCase
      * nouveau cycle repart à zéro, pas l'historique des récompenses déjà
      * accordées (voir `MerchantDashboardController::grantStampOrPoints`).
      */
-    public function test_resolve_keeps_a_tier_reached_after_its_cycle_resets(): void
+    /**
+     * Le palier redevient "à venir" dès le début du nouveau cycle — seul le
+     * cycle EN COURS pilote la roadmap affichée. La récompense déjà
+     * accordée au cycle précédent reste elle acquise (la ligne
+     * `LoyaltyReward` de ce test n'est ni modifiée ni supprimée par
+     * `resolve()`) : c'est uniquement l'indicateur de progression du palier
+     * qui se réaligne, pas l'historique des récompenses déjà débloquées.
+     */
+    public function test_resolve_relocks_a_tier_once_its_cycle_resets(): void
     {
         $card = $this->cardWithProgram('stamps', [], stampsCurrent: 0);
         $card->loyaltyProgram->update(['loops' => true]);
@@ -291,7 +299,7 @@ class LoyaltyTierServiceTest extends TestCase
             'goal' => 20, 'level_name' => 'Niveau 2', 'reward_description' => 'Menu offert',
         ]);
         // Récompense déjà accordée pour le palier 1 lors du cycle précédent.
-        \App\Models\LoyaltyReward::create([
+        $reward = \App\Models\LoyaltyReward::create([
             'loyalty_card_id' => $card->id, 'restaurant_id' => $card->restaurant_id,
             'program_tier_id' => $tier1->id, 'title' => '1 café offert', 'unlocked_at' => now(),
         ]);
@@ -299,8 +307,13 @@ class LoyaltyTierServiceTest extends TestCase
         // Le cycle a wrappé : la progression repart de 0, comme après un reset.
         $resolved = app(LoyaltyTierService::class)->resolve($card->fresh());
 
-        $this->assertSame('reached', $resolved['tiers'][0]['status']);
-        $this->assertSame('1 café offert', $resolved['tiers'][0]['reward_description']);
+        $this->assertSame('current', $resolved['tiers'][0]['status']);
+        // Palier masqué (reveal_reward: false) tant qu'il n'est pas atteint
+        // CE cycle-ci — cohérent avec le statut "current" retrouvé.
+        $this->assertSame('', $resolved['tiers'][0]['reward_description']);
+
+        // La récompense du cycle précédent, elle, reste bien acquise.
+        $this->assertSame('available', $reward->fresh()->status);
     }
 
     public function test_resolve_keeps_reward_descriptions_visible_by_default(): void

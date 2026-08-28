@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Merchant;
 
+use App\Events\LoyaltyCardUpdated;
 use App\Events\LoyaltyRewardUpdated;
 use App\Models\Client;
 use App\Models\LoyaltyCard;
@@ -23,12 +24,12 @@ class RewardRealtimeTest extends TestCase
 {
     use RefreshDatabase;
 
-    private function restaurantWithToken(): array
+    private function restaurantWithToken(?string $email = null): array
     {
         $restaurant = Restaurant::create([
             'name'     => 'Chez Awa',
             'category' => 'Restaurant',
-            'email'    => 'commerce@example.com',
+            'email'    => $email ?? 'commerce@example.com',
             'password' => bcrypt('password123'),
         ]);
         $token = $restaurant->createToken('merchant-app')->plainTextToken;
@@ -41,7 +42,7 @@ class RewardRealtimeTest extends TestCase
         $client = Client::create([
             'uuid'       => (string) Str::uuid(),
             'first_name' => 'Ada',
-            'phone'      => '+22890000001',
+            'phone'      => '+2289000'.random_int(1000, 9999),
             'password'   => bcrypt('secret123'),
         ]);
 
@@ -51,6 +52,73 @@ class RewardRealtimeTest extends TestCase
             'loyalty_program_id' => $program->id,
             'progress'           => ['stamps_current' => 0],
         ]);
+    }
+
+    /**
+     * Le dashboard marchand doit se synchroniser en direct au même titre que
+     * le wallet client (historique, solde, progression, niveau) — même
+     * événement, diffusé sur les deux canaux privés (`loyalty.{clientId}` +
+     * `merchant.{restaurantId}`).
+     */
+    public function test_card_update_broadcasts_on_both_the_client_and_merchant_channels(): void
+    {
+        [$restaurant, $token] = $this->restaurantWithToken();
+        $program = LoyaltyProgram::create([
+            'restaurant_id' => $restaurant->id,
+            'name'          => 'Programme',
+            'type'          => 'stamps',
+            'config'        => ['goal' => 10],
+        ]);
+        $card = $this->cardFor($restaurant, $program);
+
+        $event = new LoyaltyCardUpdated($card);
+        $channels = $event->broadcastOn();
+
+        $this->assertCount(2, $channels);
+        $this->assertSame('private-loyalty.' . $card->client_id, $channels[0]->name);
+        $this->assertSame('private-merchant.' . $restaurant->id, $channels[1]->name);
+        $this->assertSame('loyalty.card.updated', $event->broadcastAs());
+    }
+
+    /** Un tampon accordé diffuse bien la mise à jour de carte vers le marchand. */
+    public function test_a_stamp_broadcasts_the_card_update(): void
+    {
+        Event::fake([LoyaltyCardUpdated::class]);
+
+        [$restaurant, $token] = $this->restaurantWithToken();
+        $program = LoyaltyProgram::create([
+            'restaurant_id' => $restaurant->id, 'name' => 'Tampons', 'type' => 'stamps',
+            'config' => ['goal' => 10],
+        ]);
+        $card = $this->cardFor($restaurant, $program);
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson("/api/merchant/clients/{$card->id}/stamps")->assertOk();
+
+        Event::assertDispatched(
+            LoyaltyCardUpdated::class,
+            fn (LoyaltyCardUpdated $e) => $e->card->id === $card->id
+        );
+    }
+
+    /** Cashback crédité PUIS utilisé diffusent chacun leur mise à jour de carte vers le marchand. */
+    public function test_cashback_earn_and_redeem_each_broadcast_the_card_update(): void
+    {
+        Event::fake([LoyaltyCardUpdated::class]);
+
+        [$restaurant, $token] = $this->restaurantWithToken();
+        $program = LoyaltyProgram::create([
+            'restaurant_id' => $restaurant->id, 'name' => 'Cashback', 'type' => 'cashback',
+            'config' => ['cashback_percentage' => 10],
+        ]);
+        $card = $this->cardFor($restaurant, $program);
+        $auth = fn () => $this->withHeader('Authorization', "Bearer {$token}");
+
+        $auth()->postJson("/api/merchant/clients/{$card->id}/stamps", ['amount_fcfa' => 10000])->assertOk();
+        $auth()->postJson("/api/merchant/clients/{$card->id}/redeem-cashback", [
+            'amount_fcfa' => 500, 'redeem_amount_fcfa' => 500,
+        ])->assertOk();
+
+        Event::assertDispatched(LoyaltyCardUpdated::class, 2);
     }
 
     public function test_unlocking_a_reward_broadcasts_it(): void
@@ -144,12 +212,14 @@ class RewardRealtimeTest extends TestCase
         $event = new LoyaltyRewardUpdated($reward);
 
         $channels = $event->broadcastOn();
-        $this->assertCount(1, $channels);
+        $this->assertCount(2, $channels);
         $this->assertSame('private-loyalty.' . $card->client_id, $channels[0]->name);
+        $this->assertSame('private-merchant.' . $restaurant->id, $channels[1]->name);
         $this->assertSame('loyalty.reward.updated', $event->broadcastAs());
         $this->assertSame(
             [
                 'id'              => $reward->id,
+                'loyalty_card_id' => $card->id,
                 'status'          => 'available',
                 'program_tier_id' => null,
                 'level_name'      => null,

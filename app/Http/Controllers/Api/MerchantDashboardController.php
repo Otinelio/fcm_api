@@ -35,6 +35,7 @@ class MerchantDashboardController extends Controller
      * - `q` : recherche sur le nom/téléphone ;
      * - `inactive_days` : inactifs depuis N jours (ou jamais actifs) ;
      * - `level` : clé canonique de niveau (`bronze|silver|gold|platinum|custom`) ;
+     * - `min_lifetime_cashback` : cashback cumulé à vie >= N FCFA (cashback uniquement) ;
      * - `min_cycles` : ayant terminé le programme au moins N fois ;
      * - `sort` : `activity` (défaut) | `recent` | `oldest` ;
      * - `page` / `per_page` : pagination (per_page plafonné à 100).
@@ -82,6 +83,17 @@ class MerchantDashboardController extends Controller
         if ($levelKey = trim((string) $request->query('level', ''))) {
             $cards = $cards
                 ->filter(fn (LoyaltyCard $card) => ($card->level['key'] ?? null) === $levelKey)
+                ->values();
+        }
+
+        // Segmentation marchand par cashback cumulé à vie (spec §7) —
+        // indépendant de la base de progression choisie (`cashback_tier_basis`) :
+        // le cumul historique sert toujours de repère pour le marchand, même
+        // si l'affichage client suit le solde.
+        if (($minLifetimeCashback = (float) $request->query('min_lifetime_cashback', 0)) > 0) {
+            $tierService = app(LoyaltyTierService::class);
+            $cards = $cards
+                ->filter(fn (LoyaltyCard $card) => $tierService->lifetimeCashback($card) >= $minLifetimeCashback)
                 ->values();
         }
 
@@ -432,7 +444,6 @@ class MerchantDashboardController extends Controller
 
         $tierService = app(LoyaltyTierService::class);
         $tiers = $tierService->tiers($program);
-        $metricBefore = $tierService->lifetimeCashback($loyaltyCard);
 
         $amountFcfa = (float) $request->input('amount_fcfa');
         $percentage = (float) ($program->config['cashback_percentage'] ?? 0);
@@ -443,13 +454,8 @@ class MerchantDashboardController extends Controller
         $createdRewardIds = [];
 
         DB::transaction(function () use (
-            $loyaltyCard, $earnedFcfa, $amountFcfa, $tiers, $metricBefore, $restaurantId, $staffUserId, &$createdRewardIds,
+            $loyaltyCard, $program, $tierService, $earnedFcfa, $amountFcfa, $tiers, $restaurantId, $staffUserId, &$createdRewardIds,
         ) {
-            $loyaltyCard->update([
-                'cashback_balance_fcfa' => $loyaltyCard->cashback_balance_fcfa + $earnedFcfa,
-                'last_activity_at' => now(),
-            ]);
-
             DB::table('loyalty_transactions')->insert([
                 'loyalty_card_id' => $loyaltyCard->id,
                 'type' => 'cashback_earn',
@@ -462,13 +468,32 @@ class MerchantDashboardController extends Controller
                 'updated_at' => now(),
             ]);
 
-            $metricAfter = $metricBefore + $earnedFcfa;
-            foreach ($this->crossedTiers($tiers, $metricBefore, $metricAfter) as $tier) {
+            $loyaltyCard->update([
+                'cashback_balance_fcfa' => $loyaltyCard->cashback_balance_fcfa + $earnedFcfa,
+                'last_activity_at' => now(),
+            ]);
+
+            // Relation déjà résolue dans ce contrôleur (`$program`) : évite
+            // que `lifetimeMetric()` recharge le programme depuis une
+            // relation potentiellement pas encore en cache sur ce modèle.
+            $loyaltyCard->setRelation('loyaltyProgram', $program);
+            $metricAfter = $tierService->lifetimeMetric($loyaltyCard);
+
+            foreach ($this->cashbackTiersToUnlock($loyaltyCard, $tiers, $metricAfter) as $tier) {
+                $rewardDescription = trim((string) ($tier['reward_description'] ?? ''));
+                if ($rewardDescription === '') {
+                    // Palier sans récompense configurée : attribue
+                    // seulement le niveau (déjà reflété par
+                    // `LoyaltyCard::level`, calculé à la lecture) — rien à
+                    // débloquer.
+                    continue;
+                }
+
                 $reward = LoyaltyReward::create([
                     'loyalty_card_id' => $loyaltyCard->id,
                     'restaurant_id' => $restaurantId,
                     'program_tier_id' => $tier['id'],
-                    'title' => $tier['reward_description'],
+                    'title' => $rewardDescription,
                     'unlocked_at' => now(),
                     'expires_at' => $tier['validity_days'] ? now()->addDays((int) $tier['validity_days']) : null,
                 ]);
@@ -495,11 +520,14 @@ class MerchantDashboardController extends Controller
 
     /**
      * Paliers franchis entre `$before` et `$after` (métrique croissante,
-     * jamais reset) :
+     * jamais reset) — Tampons/Achats uniquement (voir `grantStampOrPoints`) :
      * - 1 seul palier configuré : répété à chaque multiple entier franchi
-     *   (ex. tous les 1000 FCFA de cashback cumulés).
+     *   (ex. tous les 10 tampons).
      * - 2+ paliers : chacun ne peut être franchi qu'une fois dans la vie de
      *   la carte (seuils strictement croissants), plafonné au dernier.
+     *
+     * Le cashback utilise `cashbackTiersToUnlock()` à la place (métrique pas
+     * forcément croissante en base `solde`, before/after n'y suffit pas).
      *
      * @param  array  $tiers  Depuis `LoyaltyTierService::tiers()`.
      * @return array Sous-ensemble de `$tiers` (avec doublons possibles si mono-palier).
@@ -521,6 +549,39 @@ class MerchantDashboardController extends Controller
         return array_values(array_filter(
             $tiers,
             fn ($tier) => $tier['goal'] > $before && $tier['goal'] <= $after,
+        ));
+    }
+
+    /**
+     * Paliers cashback à débloquer côté marchand pour ce crédit — jamais
+     * re-débloqués une fois servis, même si la métrique redescend puis
+     * remonte au-dessus d'un seuil déjà franchi (base `solde`, voir
+     * `LoyaltyTierService::lifetimeMetric`). Contrairement à `crossedTiers`,
+     * ne s'appuie pas sur un intervalle before/after (la métrique cashback
+     * n'est pas forcément croissante) : la seule source de vérité est « ce
+     * palier a-t-il déjà produit une récompense pour cette carte ? ». Un
+     * palier sans récompense configurée n'a jamais de `LoyaltyReward` à
+     * vérifier — le re-détecter à chaque appel ne crée rien, donc sans
+     * risque de doublon (voir l'appelant, qui saute la création si le texte
+     * de récompense est vide). S'applique aussi bien à 1 palier configuré
+     * qu'à plusieurs : le cashback n'a pas de comportement "cycle répété".
+     *
+     * @param  array  $tiers  Depuis `LoyaltyTierService::tiers()`.
+     */
+    private function cashbackTiersToUnlock(LoyaltyCard $loyaltyCard, array $tiers, float $metricAfter): array
+    {
+        if ($tiers === []) {
+            return [];
+        }
+
+        $alreadyUnlockedTierIds = LoyaltyReward::where('loyalty_card_id', $loyaltyCard->id)
+            ->whereNotNull('program_tier_id')
+            ->pluck('program_tier_id')
+            ->all();
+
+        return array_values(array_filter(
+            $tiers,
+            fn ($tier) => $tier['goal'] <= $metricAfter && ! in_array($tier['id'], $alreadyUnlockedTierIds, true),
         ));
     }
 

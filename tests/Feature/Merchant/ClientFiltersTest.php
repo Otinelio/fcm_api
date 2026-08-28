@@ -151,6 +151,44 @@ class ClientFiltersTest extends TestCase
         $this->assertSame(['Goldie'], collect($goldOnly->json('data'))->pluck('client.first_name')->all());
     }
 
+    /**
+     * Régression : un client tout juste ajouté (0 progression) sur un
+     * programme multi-palier affichait le niveau "Fidèle" (dernier palier)
+     * au lieu de "Bronze" (premier) — `levelKey(null)` retombait sur son
+     * fallback `'custom'`. Voir `LoyaltyCard::getLevelAttribute`.
+     */
+    public function test_brand_new_client_shows_bronze_not_last_tier(): void
+    {
+        [$restaurant, $token] = $this->restaurantWithToken();
+        $program = LoyaltyProgram::create([
+            'restaurant_id' => $restaurant->id, 'name' => 'P', 'type' => 'stamps', 'loops' => false, 'config' => [],
+        ]);
+        LoyaltyProgramTier::create([
+            'loyalty_program_id' => $program->id, 'order' => 1,
+            'goal' => 3, 'level_name' => 'Bronze', 'reward_description' => 'A',
+        ]);
+        LoyaltyProgramTier::create([
+            'loyalty_program_id' => $program->id, 'order' => 2,
+            'goal' => 9, 'level_name' => 'Fidèle', 'reward_description' => 'B',
+        ]);
+        $card = $this->cardFor($restaurant, $program, firstName: 'Nouveau');
+
+        $this->assertNull($card->level['name']);
+        $this->assertSame('bronze', $card->level['key']);
+        $this->assertSame(1, $card->level['position']);
+        $this->assertFalse($card->level['is_max_level']);
+
+        // Le filtre marchand par niveau doit le classer sous "bronze", pas
+        // sous "custom" (clé du dernier palier "Fidèle" ici).
+        $bronzeFilter = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson('/api/merchant/clients?level=bronze');
+        $this->assertSame(['Nouveau'], collect($bronzeFilter->json('data'))->pluck('client.first_name')->all());
+
+        $customFilter = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson('/api/merchant/clients?level=custom');
+        $this->assertSame([], collect($customFilter->json('data'))->pluck('client.first_name')->all());
+    }
+
     public function test_min_cycles_filters_clients_by_completed_cycles(): void
     {
         [$restaurant, $token] = $this->restaurantWithToken();
@@ -255,6 +293,26 @@ class ClientFiltersTest extends TestCase
             ->getJson('/api/merchant/clients?sort=oldest');
         $oldest->assertOk();
         $this->assertSame(['Old', 'New'], collect($oldest->json('data'))->pluck('client.first_name')->all());
+    }
+
+    /** Segmentation marchand par cashback cumulé à vie (spec §7). */
+    public function test_min_lifetime_cashback_filters_clients_by_cumulative_cashback(): void
+    {
+        [$restaurant, $token] = $this->restaurantWithToken();
+        $program = LoyaltyProgram::create([
+            'restaurant_id' => $restaurant->id, 'name' => 'P', 'type' => 'cashback',
+            'config' => ['cashback_percentage' => 10],
+        ]);
+        $small = $this->cardFor($restaurant, $program, firstName: 'Small');
+        $big = $this->cardFor($restaurant, $program, firstName: 'Big');
+        $auth = fn () => $this->withHeader('Authorization', "Bearer {$token}");
+
+        $auth()->postJson("/api/merchant/clients/{$small->id}/stamps", ['amount_fcfa' => 10000])->assertOk(); // 1 000 FCFA
+        $auth()->postJson("/api/merchant/clients/{$big->id}/stamps", ['amount_fcfa' => 100000])->assertOk(); // 10 000 FCFA
+
+        $filtered = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson('/api/merchant/clients?min_lifetime_cashback=5000');
+        $this->assertSame(['Big'], collect($filtered->json('data'))->pluck('client.first_name')->all());
     }
 
     public function test_per_page_is_capped_and_invalid_values_fall_back(): void

@@ -11,12 +11,17 @@ use Illuminate\Support\Facades\DB;
  * unifiés). Remplace `RewardTierService` et `LoyaltyLevelService`.
  *
  * Distinction volontaire, cœur de la conception (voir spec) :
- * - 1 seul palier configuré : comportement "cycle répété" existant,
- *   `progress['stamps_current']` remis à zéro à chaque déblocage, jamais de
- *   niveau affiché. Géré directement par `MerchantDashboardController`, pas
- *   par ce service (`resolve()` renvoie `tiers: []`, `level_name: null`).
- * - 2 paliers ou plus : cumulatif à vie (jamais reset), plafonné au dernier
- *   palier une fois atteint. C'est ce que `resolve()` calcule.
+ * - Tampons/Achats, 1 seul palier configuré : comportement "cycle répété"
+ *   existant, `progress['stamps_current']` remis à zéro à chaque déblocage,
+ *   jamais de niveau affiché. Géré directement par
+ *   `MerchantDashboardController`, pas par ce service (`resolve()` renvoie
+ *   `tiers: []`, `level_name: null`).
+ * - Tampons/Achats à 2 paliers ou plus, OU Cashback à 1 palier ou plus :
+ *   cumulatif à vie par défaut (jamais reset), plafonné au dernier palier
+ *   une fois atteint. C'est ce que `resolve()` calcule. Le cashback n'a
+ *   jamais de comportement "cycle répété", même à 1 seul palier configuré —
+ *   un palier cashback attribue un niveau définitif, pas un objectif
+ *   cyclique (voir `lifetimeMetric()` pour la bascule cumulé/solde).
  *
  * Icône/nom de niveau : pour les paliers en position 1 à 5, nom et icône
  * sont imposés côté client (`LoyaltyLevel.forPosition`, ordre Bronze <
@@ -136,7 +141,13 @@ class LoyaltyTierService
             return null;
         }
 
-        if (count($tiers) === 1) {
+        // Mono-palier "cycle répété" (Tampons/Achats uniquement) : toujours
+        // le même palier visé, jamais atteint durablement (le cycle remet la
+        // métrique à zéro). Le cashback n'a pas de cycle — même à 1 seul
+        // palier configuré, il rejoint la logique multi-palier ci-dessous
+        // (métrique jamais reset, palier réellement débloqué une fois pour
+        // toutes une fois atteint, voir `resolve()`).
+        if (count($tiers) === 1 && $card->loyaltyProgram?->type !== 'cashback') {
             return $this->redact($tiers[0]);
         }
 
@@ -163,24 +174,48 @@ class LoyaltyTierService
     }
 
     /**
-     * Métrique multi-palier : jamais reset. Cashback = cashback cumulé à
-     * vie. Tampons/Achats = `progress['stamps_current']`, qui n'est plus
-     * remis à zéro dès qu'un programme a 2+ paliers (voir
+     * Métrique de progression des paliers : jamais reset. Tampons/Achats =
+     * `progress['stamps_current']`, qui n'est plus remis à zéro dès qu'un
+     * programme a 2+ paliers (voir
      * `MerchantDashboardController::grantStampOrPoints`).
+     *
+     * Cashback : selon `config['cashback_tier_basis']` (réglage unique pour
+     * tout le programme — les paliers partagent une roadmap avec UNE seule
+     * métrique triable/croissante, on ne peut pas en mélanger deux) :
+     * - `cumulative` (défaut) : cashback cumulé généré à vie, ne redescend
+     *   jamais — utiliser le solde ne fait jamais perdre un niveau.
+     * - `balance` : solde disponible en direct (`cashback_available_fcfa`),
+     *   peut redescendre si le client utilise son cashback — le niveau
+     *   affiché suit alors le solde. Les récompenses déjà débloquées à un
+     *   palier restent acquises même si le niveau redescend ensuite (voir
+     *   `MerchantDashboardController::cashbackTiersToUnlock`, qui ne
+     *   re-débloque jamais un palier déjà servi).
      */
-    private function lifetimeMetric(LoyaltyCard $card): float
+    public function lifetimeMetric(LoyaltyCard $card): float
     {
-        return $card->loyaltyProgram?->type === 'cashback'
-            ? $this->lifetimeCashback($card)
-            : (float) ($card->progress['stamps_current'] ?? 0);
+        if ($card->loyaltyProgram?->type !== 'cashback') {
+            return (float) ($card->progress['stamps_current'] ?? 0);
+        }
+
+        $basis = $card->loyaltyProgram->config['cashback_tier_basis'] ?? 'cumulative';
+
+        return $basis === 'balance'
+            ? (float) $card->cashback_available_fcfa
+            : $this->lifetimeCashback($card);
     }
 
     /** @return array{level_name: ?string, percent_to_next: ?int, is_max_level: bool, position: ?int, icon_key: ?string, tiers: array} */
     public function resolve(LoyaltyCard $card): array
     {
         $tiers = $this->tiers($card->loyaltyProgram);
+        $isCashback = $card->loyaltyProgram?->type === 'cashback';
 
-        if (count($tiers) <= 1) {
+        // Aucun palier configuré, ou mono-palier "cycle répété" (Tampons/
+        // Achats seulement — voir `nextReward()`) : pas de niveau à afficher.
+        // Le cashback à 1 seul palier configuré, lui, rejoint le calcul
+        // ci-dessous comme s'il en avait plusieurs (spec : même un palier
+        // unique attribue un niveau, jamais de cycle/reset pour le cashback).
+        if ($tiers === [] || (count($tiers) === 1 && ! $isCashback)) {
             return ['level_name' => null, 'percent_to_next' => null, 'is_max_level' => false, 'position' => null, 'icon_key' => null, 'tiers' => []];
         }
 
@@ -197,21 +232,17 @@ class LoyaltyTierService
             }
         }
 
-        // Paliers déjà débloqués au moins une fois pour cette carte (une
-        // vraie `LoyaltyReward` existe) — un reset de cycle (`loops=true`)
-        // ne remet à zéro que la progression courante, jamais l'historique
-        // des récompenses déjà accordées : ces paliers restent "reached" et
-        // ne se refont jamais masquer, même si la métrique du nouveau cycle
-        // ne les couvre plus.
-        $everUnlockedTierIds = DB::table('loyalty_rewards')
-            ->where('loyalty_card_id', $card->id)
-            ->whereNotNull('program_tier_id')
-            ->pluck('program_tier_id')
-            ->all();
-
-        $tiersWithStatus = collect($tiers)->values()->map(function ($tier) use ($metric, $next, $everUnlockedTierIds) {
-            $alreadyUnlocked = $tier['id'] !== null && in_array($tier['id'], $everUnlockedTierIds, true);
-            $status = ($tier['goal'] <= $metric || $alreadyUnlocked)
+        // Le statut de chaque palier reflète UNIQUEMENT le cycle en cours
+        // (`$metric`, déjà remis à zéro par `grantStampOrPoints` quand
+        // `loops=true`) : un palier franchi au cycle 1 redevient "à venir"
+        // dès le début du cycle 2, jusqu'à être re-franchi. La récompense
+        // déjà accordée au cycle précédent reste elle bien acquise (une
+        // `LoyaltyReward` distincte existe déjà, jamais touchée par un reset
+        // de cycle — voir `removeStamp`/`redeemReward`) ; seul l'indicateur
+        // de progression du palier dans la roadmap se réaligne sur le cycle
+        // courant, pour que le marchand/client voie où en est CE cycle-ci.
+        $tiersWithStatus = collect($tiers)->values()->map(function ($tier) use ($metric, $next) {
+            $status = $tier['goal'] <= $metric
                 ? 'reached'
                 : ($next !== null && $tier['order'] === $next['order'] ? 'current' : 'upcoming');
 

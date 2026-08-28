@@ -79,6 +79,10 @@ class LoyaltyProgramController extends Controller
                         // Expiration du solde cashback après N jours sans crédit
                         // (spec §4.1/§12, optionnelle) — `null` = pas d'expiration.
                         'cashback_expiry_days' => $isCashback ? ($data['cashback_expiry_days'] ?? null) : null,
+                        // Base de progression des paliers cashback — voir
+                        // `LoyaltyTierService::lifetimeMetric`. `null` pour
+                        // les autres types (non applicable).
+                        'cashback_tier_basis' => $isCashback ? ($data['cashback_tier_basis'] ?? 'cumulative') : null,
                     ],
                 ],
             );
@@ -97,7 +101,7 @@ class LoyaltyProgramController extends Controller
                         'goal' => (int) $tier['goal'],
                         'level_name' => $tier['level_name'] ?? null,
                         'icon_key' => $tier['icon_key'] ?? null,
-                        'reward_description' => $tier['reward_description'],
+                        'reward_description' => $tier['reward_description'] ?? null,
                         'reveal_reward' => $tier['reveal_reward'] ?? true,
                         'validity_days' => $tier['validity_days'] ?? null,
                     ],

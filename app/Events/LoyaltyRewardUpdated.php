@@ -12,11 +12,11 @@ use Illuminate\Queue\SerializesModels;
 
 /**
  * Diffusé à chaque transition d'état d'une récompense (déblocage, validation
- * marchand, annulation) — permet à l'écran "Mes récompenses" de se mettre à
- * jour en direct, sans pull-to-refresh (voir `MivaFid-doc/recompense.md`
- * section 13). Réutilise le canal privé de `LoyaltyCardUpdated`
- * (`loyalty.{clientId}`, déjà autorisé dans `routes/channels.php` et déjà
- * ouvert côté app dès l'authentification) plutôt que d'en ouvrir un second.
+ * marchand, annulation) — permet à l'écran "Mes récompenses" ET au dashboard
+ * marchand de se mettre à jour en direct, sans pull-to-refresh (voir
+ * `MivaFid-doc/recompense.md` section 13). Réutilise les mêmes canaux privés
+ * que `LoyaltyCardUpdated` (`loyalty.{clientId}` + `merchant.{restaurantId}`,
+ * déjà autorisés dans `routes/channels.php`) plutôt que d'en ouvrir d'autres.
  */
 class LoyaltyRewardUpdated implements ShouldBroadcast
 {
@@ -31,11 +31,20 @@ class LoyaltyRewardUpdated implements ShouldBroadcast
      */
     public function broadcastOn(): array
     {
-        $clientId = $this->reward->loyaltyCard?->client_id;
+        $channels = [];
 
         // Une carte supprimée après coup laisse `loyalty_card_id` à null
-        // (nullOnDelete, voir la migration) : rien à diffuser, pas d'erreur.
-        return $clientId === null ? [] : [new PrivateChannel('loyalty.' . $clientId)];
+        // (nullOnDelete, voir la migration) : rien à diffuser côté client,
+        // pas d'erreur.
+        if (($clientId = $this->reward->loyaltyCard?->client_id) !== null) {
+            $channels[] = new PrivateChannel('loyalty.' . $clientId);
+        }
+
+        // `restaurant_id` est une colonne propre de `loyalty_rewards`
+        // (jamais nulle), indépendante de la relation `loyaltyCard`.
+        $channels[] = new PrivateChannel('merchant.' . $this->reward->restaurant_id);
+
+        return $channels;
     }
 
     public function broadcastAs(): string
@@ -63,6 +72,11 @@ class LoyaltyRewardUpdated implements ShouldBroadcast
 
         return [
             'id'              => $this->reward->id,
+            // Permet au dashboard marchand de filtrer les événements par
+            // carte (ex. fiche client ouverte) sans recharger pour tout
+            // client — le client mobile, lui, n'a pas besoin de filtrer
+            // (une seule liste "Mes récompenses" toutes cartes confondues).
+            'loyalty_card_id' => $this->reward->loyalty_card_id,
             'status'          => $this->reward->status,
             'program_tier_id' => $this->reward->program_tier_id,
             'level_name'      => $tier?->level_name,
