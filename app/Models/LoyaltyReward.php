@@ -22,6 +22,7 @@ class LoyaltyReward extends Model
         'program_tier_id',
         'restaurant_id',
         'source',
+        'is_surprise',
         'title',
         'status',
         'redeem_token',
@@ -39,6 +40,7 @@ class LoyaltyReward extends Model
     protected function casts(): array
     {
         return [
+            'is_surprise' => 'boolean',
             'unlocked_at' => 'datetime',
             'expires_at' => 'datetime',
             'used_at' => 'datetime',

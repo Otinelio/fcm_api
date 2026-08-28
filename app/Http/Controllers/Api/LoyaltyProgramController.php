@@ -90,6 +90,7 @@ class LoyaltyProgramController extends Controller
                             'title' => $data['birthday_reward_title'] ?? null,
                             'description' => $data['birthday_reward_description'] ?? null,
                             'validity_days' => $data['birthday_reward_validity_days'] ?? null,
+                            'surprise' => $data['birthday_reward_surprise'] ?? false,
                         ],
                     ],
                 ],

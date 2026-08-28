@@ -51,6 +51,10 @@ class StoreLoyaltyProgramRequest extends FormRequest
             'birthday_reward_description'    => ['nullable', 'string', 'max:500'],
             // Durée de validité (jours) depuis l'anniversaire — `null` = pas d'expiration.
             'birthday_reward_validity_days'  => ['nullable', 'integer', 'min:1', 'max:365'],
+            // Récompense "surprise" : titre réel masqué au client (générique
+            // à la place) tant qu'elle n'est pas utilisée — le marchand voit
+            // toujours le vrai titre. Défaut `false`.
+            'birthday_reward_surprise'       => ['sometimes', 'boolean'],
             // Taux de conversion mode "Achat" (FCFA pour 1 point) — 100 par
             // défaut côté Flutter, réglable par restaurant.
             'fcfa_per_point'          => ['nullable', 'integer', 'min:1', 'max:1000000'],
