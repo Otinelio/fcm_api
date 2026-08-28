@@ -83,6 +83,14 @@ class LoyaltyProgramController extends Controller
                         // `LoyaltyTierService::lifetimeMetric`. `null` pour
                         // les autres types (non applicable).
                         'cashback_tier_basis' => $isCashback ? ($data['cashback_tier_basis'] ?? 'cumulative') : null,
+                        // Récompense anniversaire — indépendante du mode, voir
+                        // `SendBirthdayNotifications`.
+                        'birthday_reward' => [
+                            'enabled' => $data['birthday_reward_enabled'] ?? false,
+                            'title' => $data['birthday_reward_title'] ?? null,
+                            'description' => $data['birthday_reward_description'] ?? null,
+                            'validity_days' => $data['birthday_reward_validity_days'] ?? null,
+                        ],
                     ],
                 ],
             );

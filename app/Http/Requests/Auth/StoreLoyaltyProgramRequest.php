@@ -43,6 +43,14 @@ class StoreLoyaltyProgramRequest extends FormRequest
             'cashback_tier_basis'    => ['nullable', 'string', 'in:cumulative,balance'],
             // Expiration du solde cashback (jours sans crédit) — optionnelle.
             'cashback_expiry_days'    => ['nullable', 'integer', 'min:1', 'max:3650'],
+            // Récompense anniversaire — indépendante du mode (stamps/spend/
+            // cashback), un seul réglage par commerce. Voir
+            // `SendBirthdayNotifications`.
+            'birthday_reward_enabled'        => ['sometimes', 'boolean'],
+            'birthday_reward_title'          => ['nullable', 'required_if:birthday_reward_enabled,true', 'string', 'max:255'],
+            'birthday_reward_description'    => ['nullable', 'string', 'max:500'],
+            // Durée de validité (jours) depuis l'anniversaire — `null` = pas d'expiration.
+            'birthday_reward_validity_days'  => ['nullable', 'integer', 'min:1', 'max:365'],
             // Taux de conversion mode "Achat" (FCFA pour 1 point) — 100 par
             // défaut côté Flutter, réglable par restaurant.
             'fcfa_per_point'          => ['nullable', 'integer', 'min:1', 'max:1000000'],
@@ -110,6 +118,7 @@ class StoreLoyaltyProgramRequest extends FormRequest
     {
         return [
             'mode.required'                         => 'Le mode de récompense est obligatoire.',
+            'birthday_reward_title.required_if'     => 'Le titre de la récompense anniversaire est obligatoire quand elle est activée.',
             'mode.in'                               => 'Mode de récompense invalide.',
             'goal.max'                              => 'L\'objectif est trop élevé.',
             'cashback_percentage.required_if'       => 'Le pourcentage de cashback est obligatoire.',
