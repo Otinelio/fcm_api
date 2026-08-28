@@ -11,12 +11,12 @@ use App\Http\Requests\Auth\UpdateProfileRequest;
 use App\Http\Requests\Auth\UpdateAvatarRequest;
 use App\Models\Client;
 use App\Services\Auth\SocialAuthService;
+use App\Services\Otp\OtpDeliveryService;
 use App\Http\Requests\Auth\ForgotPasswordRequest;
 use App\Http\Requests\Auth\VerifyResetOtpRequest;
 use App\Http\Requests\Auth\ResetPasswordRequest;
 use App\Http\Requests\Auth\ValidateRegisterStep1Request;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
@@ -427,8 +427,7 @@ class ClientAuthController extends Controller
 
         Cache::put('otp_reset_' . $identifier, $otp, now()->addMinutes(10));
 
-        // Simuler l'envoi pour les tests locaux (vu qu'on n'a pas de SMS Gateway)
-        Log::info("Code OTP de réinitialisation pour {$identifier} : {$otp}");
+        app(OtpDeliveryService::class)->send($identifier, $otp);
 
         $response = ['message' => 'Un code de réinitialisation a été envoyé.'];
 

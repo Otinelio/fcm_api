@@ -13,6 +13,7 @@ use App\Http\Requests\Auth\UpdateLogoRequest;
 use App\Http\Requests\Auth\VerifyResetOtpRestaurantRequest;
 use App\Models\Restaurant;
 use App\Services\Auth\SocialAuthService;
+use App\Services\Otp\OtpDeliveryService;
 use App\Support\CurrentActor;
 use App\Support\RestaurantPayload;
 use Illuminate\Http\JsonResponse;
@@ -20,7 +21,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -500,7 +500,7 @@ class RestaurantAuthController extends Controller
 
         Cache::put('otp_reset_merchant_'.$identifier, $otp, now()->addMinutes(10));
 
-        Log::info("Code OTP de réinitialisation marchand pour {$identifier} : {$otp}");
+        app(OtpDeliveryService::class)->send($identifier, $otp);
 
         $response = ['message' => 'Un code de réinitialisation a été envoyé.'];
 

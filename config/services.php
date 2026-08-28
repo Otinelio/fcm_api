@@ -28,6 +28,24 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    // Envoi OTP par SMS (repli quand WhatsApp échoue/indisponible) — voir
+    // `App\Services\Otp\Channels\SmsOtpChannel`.
+    'africastalking' => [
+        'username' => env('AFRICASTALKING_USERNAME'),
+        'api_key' => env('AFRICASTALKING_API_KEY'),
+        'sender_id' => env('AFRICASTALKING_SENDER_ID'),
+    ],
+
+    // Envoi OTP par WhatsApp (canal prioritaire pour un numéro de téléphone)
+    // via 360dialog (BSP Cloud API) — voir
+    // `App\Services\Otp\Channels\WhatsAppOtpChannel`.
+    'dialog360' => [
+        'api_key' => env('DIALOG360_API_KEY'),
+        // Nom du modèle "Authentification" approuvé côté WhatsApp Business Manager.
+        'otp_template' => env('DIALOG360_OTP_TEMPLATE', 'otp_verification'),
+        'template_lang' => env('DIALOG360_TEMPLATE_LANG', 'fr'),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),
