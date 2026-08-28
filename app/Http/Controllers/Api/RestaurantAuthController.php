@@ -480,13 +480,27 @@ class RestaurantAuthController extends Controller
     // Password Recovery (OTP, même mécanisme que ClientAuthController)
     // ─────────────────────────────────────────────────────────
 
+    /**
+     * `phone` OU `email` — même choix que côté client (`ClientAuthController`),
+     * validé par `required_without` dans les deux `FormRequest`.
+     */
     public function forgotPassword(ForgotPasswordRestaurantRequest $request): JsonResponse
     {
+        $identifier = $request->phone ?? $request->email;
+
+        $restaurant = Restaurant::where(isset($request->phone) ? 'phone' : 'email', $identifier)->first();
+
+        if ($restaurant && $restaurant->isOAuthUser()) {
+            return response()->json([
+                'message' => $restaurant->authMethodDeniedMessage(),
+            ], 403);
+        }
+
         $otp = (string) random_int(100000, 999999);
 
-        Cache::put('otp_reset_merchant_'.$request->email, $otp, now()->addMinutes(10));
+        Cache::put('otp_reset_merchant_'.$identifier, $otp, now()->addMinutes(10));
 
-        Log::info("Code OTP de réinitialisation marchand pour {$request->email} : {$otp}");
+        Log::info("Code OTP de réinitialisation marchand pour {$identifier} : {$otp}");
 
         $response = ['message' => 'Un code de réinitialisation a été envoyé.'];
 
@@ -499,7 +513,8 @@ class RestaurantAuthController extends Controller
 
     public function verifyResetOtp(VerifyResetOtpRestaurantRequest $request): JsonResponse
     {
-        $cachedOtp = Cache::get('otp_reset_merchant_'.$request->email);
+        $identifier = $request->phone ?? $request->email;
+        $cachedOtp = Cache::get('otp_reset_merchant_'.$identifier);
 
         if (! $cachedOtp || $cachedOtp !== $request->otp) {
             return response()->json([
@@ -508,8 +523,8 @@ class RestaurantAuthController extends Controller
         }
 
         $resetToken = (string) Str::uuid();
-        Cache::put('reset_token_merchant_'.$request->email, $resetToken, now()->addMinutes(15));
-        Cache::forget('otp_reset_merchant_'.$request->email);
+        Cache::put('reset_token_merchant_'.$identifier, $resetToken, now()->addMinutes(15));
+        Cache::forget('otp_reset_merchant_'.$identifier);
 
         return response()->json([
             'message' => 'Code vérifié avec succès.',
@@ -519,7 +534,8 @@ class RestaurantAuthController extends Controller
 
     public function resetPassword(ResetPasswordRestaurantRequest $request): JsonResponse
     {
-        $cachedToken = Cache::get('reset_token_merchant_'.$request->email);
+        $identifier = $request->phone ?? $request->email;
+        $cachedToken = Cache::get('reset_token_merchant_'.$identifier);
 
         if (! $cachedToken || $cachedToken !== $request->reset_token) {
             return response()->json([
@@ -527,13 +543,19 @@ class RestaurantAuthController extends Controller
             ], 400);
         }
 
-        $restaurant = Restaurant::where('email', $request->email)->firstOrFail();
+        $restaurant = Restaurant::where(isset($request->phone) ? 'phone' : 'email', $identifier)->firstOrFail();
+
+        if ($restaurant->isOAuthUser()) {
+            return response()->json([
+                'message' => $restaurant->authMethodDeniedMessage(),
+            ], 403);
+        }
 
         $restaurant->update([
             'password' => Hash::make($request->password),
         ]);
 
-        Cache::forget('reset_token_merchant_'.$request->email);
+        Cache::forget('reset_token_merchant_'.$identifier);
         $restaurant->tokens()->delete();
 
         return response()->json([

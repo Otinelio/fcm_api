@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Auth;
 
+use App\Services\Phone\PhoneParser;
 use Illuminate\Foundation\Http\FormRequest;
 
 class VerifyResetOtpRestaurantRequest extends FormRequest
@@ -11,10 +12,22 @@ class VerifyResetOtpRestaurantRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation()
+    {
+        if ($this->has('phone') && ! empty($this->phone)) {
+            $parser = app(PhoneParser::class);
+            $normalized = $parser->normalize($this->phone);
+            if ($normalized) {
+                $this->merge(['phone' => $normalized]);
+            }
+        }
+    }
+
     public function rules(): array
     {
         return [
-            'email' => ['required', 'email'],
+            'phone' => ['required_without:email', 'string'],
+            'email' => ['required_without:phone', 'email'],
             'otp'   => ['required', 'string', 'size:6'],
         ];
     }

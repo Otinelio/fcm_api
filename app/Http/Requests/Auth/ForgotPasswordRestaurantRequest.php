@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Auth;
 
+use App\Services\Phone\PhoneParser;
 use Illuminate\Foundation\Http\FormRequest;
 
 class ForgotPasswordRestaurantRequest extends FormRequest
@@ -11,17 +12,33 @@ class ForgotPasswordRestaurantRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation()
+    {
+        if ($this->has('phone') && ! empty($this->phone)) {
+            $parser = app(PhoneParser::class);
+            $normalized = $parser->normalize($this->phone);
+            if ($normalized) {
+                $this->merge(['phone' => $normalized]);
+            }
+        }
+    }
+
     public function rules(): array
     {
         return [
-            'email' => ['required', 'email', 'exists:restaurants,email'],
+            'phone' => ['required_without:email', 'string', 'phone:AUTO,INTERNATIONAL', 'exists:restaurants,phone'],
+            'email' => ['required_without:phone', 'email', 'exists:restaurants,email'],
         ];
     }
 
     public function messages(): array
     {
         return [
-            'email.exists' => 'Aucun compte n\'est associé à cette adresse email.',
+            'phone.exists'            => 'Aucun compte n\'est associé à ce numéro.',
+            'phone.phone'             => 'Le numéro de téléphone n\'est pas valide.',
+            'email.exists'            => 'Aucun compte n\'est associé à cette adresse email.',
+            'phone.required_without'  => 'Veuillez renseigner votre numéro de téléphone ou votre email.',
+            'email.required_without'  => 'Veuillez renseigner votre email ou votre numéro de téléphone.',
         ];
     }
 }
