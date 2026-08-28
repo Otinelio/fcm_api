@@ -21,6 +21,7 @@ class LoyaltyReward extends Model
         'loyalty_transaction_id',
         'program_tier_id',
         'restaurant_id',
+        'source',
         'title',
         'status',
         'redeem_token',
