@@ -20,6 +20,7 @@
         "laravel/tinker": "^3.0",
         "matanyadaev/laravel-eloquent-spatial": "^4.8",
         "propaganistas/laravel-phone": "^6.0",
+        "resend/resend-laravel": "^1.4",
         "spatie/laravel-permission": "^8.3"
     },
     "require-dev": {
