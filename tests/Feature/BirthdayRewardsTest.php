@@ -85,13 +85,14 @@ class BirthdayRewardsTest extends TestCase
         $this->assertSame(0, LoyaltyReward::count());
     }
 
-    public function test_no_reward_for_a_client_not_born_today(): void
+    public function test_no_reward_when_birthday_just_passed(): void
     {
         $restaurant = $this->restaurant();
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id, 'name' => 'P', 'type' => 'stamps',
             'config' => ['birthday_reward' => ['enabled' => true, 'title' => 'Dessert offert']],
         ]);
+        // Anniversaire il y a 3 jours -> prochaine occurrence dans ~362 jours, hors fenêtre.
         $client = $this->clientBornToday(['birthdate' => now()->subYears(25)->subDays(3)->format('Y-m-d')]);
         $this->cardFor($client, $restaurant, $program);
 
@@ -100,7 +101,37 @@ class BirthdayRewardsTest extends TestCase
         $this->assertSame(0, LoyaltyReward::count());
     }
 
-    public function test_does_not_duplicate_within_the_same_year(): void
+    public function test_creates_a_reward_when_birthday_is_within_the_30_day_window(): void
+    {
+        $restaurant = $this->restaurant();
+        $program = LoyaltyProgram::create([
+            'restaurant_id' => $restaurant->id, 'name' => 'P', 'type' => 'stamps',
+            'config' => ['birthday_reward' => ['enabled' => true, 'title' => 'Dessert offert']],
+        ]);
+        $client = $this->clientBornToday(['birthdate' => now()->subYears(25)->addDays(25)->format('Y-m-d')]);
+        $card = $this->cardFor($client, $restaurant, $program);
+
+        Artisan::call('notifications:birthdays');
+
+        $this->assertSame(1, LoyaltyReward::where('loyalty_card_id', $card->id)->count());
+    }
+
+    public function test_no_reward_when_birthday_is_outside_the_30_day_window(): void
+    {
+        $restaurant = $this->restaurant();
+        $program = LoyaltyProgram::create([
+            'restaurant_id' => $restaurant->id, 'name' => 'P', 'type' => 'stamps',
+            'config' => ['birthday_reward' => ['enabled' => true, 'title' => 'Dessert offert']],
+        ]);
+        $client = $this->clientBornToday(['birthdate' => now()->subYears(25)->addDays(31)->format('Y-m-d')]);
+        $this->cardFor($client, $restaurant, $program);
+
+        Artisan::call('notifications:birthdays');
+
+        $this->assertSame(0, LoyaltyReward::count());
+    }
+
+    public function test_does_not_duplicate_within_the_same_window(): void
     {
         $restaurant = $this->restaurant();
         $program = LoyaltyProgram::create([
@@ -176,5 +207,71 @@ class BirthdayRewardsTest extends TestCase
 
         $response->assertStatus(422);
         $response->assertJsonValidationErrors('birthday_reward_title');
+    }
+
+    public function test_program_store_persists_surprise_flag(): void
+    {
+        $restaurant = $this->restaurant();
+        $token = $restaurant->createToken('merchant-app')->plainTextToken;
+
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/loyalty-programs', [
+                'mode' => 'stamps',
+                'tiers' => [['goal' => 10, 'reward_description' => 'Café offert']],
+                'birthday_reward_enabled' => true,
+                'birthday_reward_title' => 'Menu offert',
+                'birthday_reward_surprise' => true,
+                'color_primary' => '#4F46E5', 'color_secondary' => '#3730A3',
+                'stamp_design_type' => 'check',
+            ]);
+
+        $response->assertCreated();
+        $program = LoyaltyProgram::where('restaurant_id', $restaurant->id)->first();
+        $this->assertTrue($program->config['birthday_reward']['surprise']);
+    }
+
+    public function test_surprise_reward_title_is_masked_to_the_client_until_used(): void
+    {
+        $restaurant = $this->restaurant();
+        $program = LoyaltyProgram::create([
+            'restaurant_id' => $restaurant->id, 'name' => 'P', 'type' => 'stamps',
+            'config' => ['birthday_reward' => [
+                'enabled' => true, 'title' => 'Menu offert', 'surprise' => true,
+            ]],
+        ]);
+        $client = $this->clientBornToday();
+        $token = $client->createToken('client-app')->plainTextToken;
+        $this->cardFor($client, $restaurant, $program);
+
+        Artisan::call('notifications:birthdays');
+
+        $response = $this->withHeader('Authorization', "Bearer {$token}")->getJson('/api/rewards');
+        $response->assertOk();
+        $this->assertSame('🎁 Récompense surprise', $response->json('rewards.0.title'));
+
+        $reward = LoyaltyReward::first();
+        $this->assertSame('Menu offert', $reward->title);
+        $this->assertTrue($reward->is_surprise);
+
+        $reward->update(['status' => 'used']);
+        $revealed = $this->withHeader('Authorization', "Bearer {$token}")->getJson('/api/rewards');
+        $this->assertSame('Menu offert', $revealed->json('rewards.0.title'));
+    }
+
+    public function test_non_surprise_reward_title_is_never_masked(): void
+    {
+        $restaurant = $this->restaurant();
+        $program = LoyaltyProgram::create([
+            'restaurant_id' => $restaurant->id, 'name' => 'P', 'type' => 'stamps',
+            'config' => ['birthday_reward' => ['enabled' => true, 'title' => 'Menu offert']],
+        ]);
+        $client = $this->clientBornToday();
+        $token = $client->createToken('client-app')->plainTextToken;
+        $this->cardFor($client, $restaurant, $program);
+
+        Artisan::call('notifications:birthdays');
+
+        $response = $this->withHeader('Authorization', "Bearer {$token}")->getJson('/api/rewards');
+        $this->assertSame('Menu offert', $response->json('rewards.0.title'));
     }
 }
