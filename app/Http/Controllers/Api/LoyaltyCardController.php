@@ -159,6 +159,7 @@ class LoyaltyCardController extends Controller
             'message' => 'Carte de fidélité rejointe grâce à un parrainage.',
             'card' => $card,
             'was_recently_created' => true,
+            'referred_by' => $referrerCard->client()->value('first_name'),
         ], 201);
     }
 
