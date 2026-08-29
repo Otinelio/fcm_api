@@ -2,57 +2,39 @@
 
 namespace App\Console\Commands;
 
+use App\Models\Client;
+use App\Models\Restaurant;
+use App\Services\NotificationDispatcher;
 use Illuminate\Console\Command;
-use App\Models\User;
-use App\Jobs\SendPromoNotification;
 
 class SendGlobalNotification extends Command
 {
-    /**
-     * The name and signature of the console command.
-     *
-     * @var string
-     */
     protected $signature = 'notifications:send-all {title?} {body?} {--delay=5 : Délai en minutes avant l\'envoi}';
 
-    /**
-     * The console command description.
-     *
-     * @var string
-     */
-    protected $description = 'Envoie une notification à tous les utilisateurs avec un délai (par défaut 5 minutes)';
+    protected $description = 'Envoie une notification à tous les clients et marchands avec un délai (par défaut 5 minutes)';
 
-    /**
-     * Execute the console command.
-     */
-    public function handle()
+    public function handle(NotificationDispatcher $notifications): void
     {
         $title = $this->argument('title') ?? 'Annonce Spéciale 🚀';
         $body = $this->argument('body') ?? 'Découvrez nos nouveautés dès maintenant !';
         $delay = (int) $this->option('delay');
 
-        $users = User::with('deviceTokens')->get();
+        $recipients = Client::with('deviceTokens')->get()
+            ->concat(Restaurant::with('deviceTokens')->get());
+
         $count = 0;
 
-        $delayTime = now()->addMinutes($delay);
-
-        foreach ($users as $user) {
-            foreach ($user->deviceTokens as $deviceToken) {
-                if ($delay > 0) {
-                    SendPromoNotification::dispatch($user->id, $deviceToken->token, [
-                        'title' => $title,
-                        'body'  => $body,
-                    ])->delay($delayTime);
-                } else {
-                    SendPromoNotification::dispatch($user->id, $deviceToken->token, [
-                        'title' => $title,
-                        'body'  => $body,
-                    ]);
-                }
-                $count++;
+        foreach ($recipients as $recipient) {
+            if ($delay > 0) {
+                dispatch(function () use ($notifications, $recipient, $title, $body) {
+                    $notifications->send($recipient, 'admin_broadcast', $title, $body);
+                })->delay(now()->addMinutes($delay));
+            } else {
+                $notifications->send($recipient, 'admin_broadcast', $title, $body);
             }
+            $count++;
         }
 
-        $this->info("Job dispatché : {$count} notification(s) prévue(s) pour {$users->count()} utilisateur(s) dans {$delay} minute(s).");
+        $this->info("Notification prévue pour {$count} destinataire(s) dans {$delay} minute(s).");
     }
 }
