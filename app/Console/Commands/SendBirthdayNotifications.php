@@ -3,10 +3,10 @@
 namespace App\Console\Commands;
 
 use App\Events\LoyaltyRewardUpdated;
-use App\Jobs\SendPromoNotification;
 use App\Models\Client;
 use App\Models\LoyaltyCard;
 use App\Models\LoyaltyReward;
+use App\Services\NotificationDispatcher;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -39,7 +39,7 @@ class SendBirthdayNotifications extends Command
      */
     private const DEDUPLICATION_WINDOW_DAYS = 335;
 
-    public function handle(): void
+    public function handle(NotificationDispatcher $notifications): void
     {
         $clients = Client::whereNotNull('birthdate')->get()
             ->filter(fn (Client $client) => $this->daysUntilNextBirthday($client->birthdate) <= self::WINDOW_DAYS);
@@ -93,13 +93,8 @@ class SendBirthdayNotifications extends Command
                     ? 'Une surprise vous attend chez '.($card->restaurant->name ?? 'votre commerce préféré').' pour votre anniversaire !'
                     : $title.' vous attend chez '.($card->restaurant->name ?? 'votre commerce préféré').' !';
 
-                foreach ($client->deviceTokens as $deviceToken) {
-                    SendPromoNotification::dispatch($client->id, $deviceToken->token, [
-                        'title' => 'Joyeux anniversaire 🎂',
-                        'body' => $notificationBody,
-                    ]);
-                    $notificationsSent++;
-                }
+                $notifications->send($client, 'birthday', 'Joyeux anniversaire 🎂', $notificationBody);
+                $notificationsSent++;
             }
         }
 
