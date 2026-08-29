@@ -3,14 +3,37 @@
 namespace App\Services;
 
 use App\Events\RewardUnlocked;
+use App\Models\Client;
+use App\Models\Notification;
 use App\Models\Reward;
 use App\Models\RewardNotificationLog;
 use App\Jobs\SendRewardFcmFallback;
+use App\Services\Fcm\FcmService;
+use Illuminate\Database\Eloquent\Model;
 
 class NotificationDispatcher
 {
-    public function __construct(protected PresenceChecker $presenceChecker)
-    {
+    /**
+     * Politique fixe par type d'événement — voir
+     * `docs/superpowers/specs/2026-08-29-notifications-unifiees-design.md`.
+     * `true` : push FCM + ligne in-app. `false` : ligne in-app seule.
+     */
+    private const PUSH_ENABLED_TYPES = [
+        'reward_unlocked' => true,
+        'referral_pending' => true,
+        'referral_validated' => true,
+        'birthday' => true,
+        'campaign' => true,
+        'admin_broadcast' => true,
+        'merchant_new_client' => false,
+        'merchant_low_sms' => false,
+        'merchant_weekly_report' => false,
+    ];
+
+    public function __construct(
+        protected PresenceChecker $presenceChecker,
+        protected FcmService $fcm,
+    ) {
     }
 
     public function dispatchRewardUnlocked(Reward $reward): void
@@ -33,5 +56,52 @@ class NotificationDispatcher
 
         SendRewardFcmFallback::dispatch($reward->id)
             ->delay(now()->addSeconds($fallbackDelay));
+    }
+
+    /**
+     * Point de passage unique pour toute notification utilisateur : crée
+     * toujours la ligne in-app, et pousse un FCM à chaque appareil du
+     * destinataire si la politique du type l'autorise (voir
+     * PUSH_ENABLED_TYPES).
+     */
+    public function send(Model $recipient, string $type, string $title, string $body, array $data = []): Notification
+    {
+        $notification = $this->recordOnly($recipient, $type, $title, $body, $data);
+
+        if (self::PUSH_ENABLED_TYPES[$type] ?? false) {
+            $this->pushToRecipient($recipient, $type, $title, $body, $data);
+        }
+
+        return $notification;
+    }
+
+    /**
+     * Crée uniquement la ligne in-app, sans jamais pousser — pour les
+     * appelants qui gèrent déjà leur propre envoi push (ex. les campagnes
+     * marchand, qui journalisent aussi dans `notification_logs`).
+     */
+    public function recordOnly(Model $recipient, string $type, string $title, string $body, array $data = []): Notification
+    {
+        return Notification::create([
+            'notifiable_type' => $recipient->getMorphClass(),
+            'notifiable_id' => $recipient->getKey(),
+            'type' => $type,
+            'title' => $title,
+            'body' => $body,
+            'data' => $data,
+        ]);
+    }
+
+    private function pushToRecipient(Model $recipient, string $type, string $title, string $body, array $data): void
+    {
+        foreach ($recipient->deviceTokens as $deviceToken) {
+            $this->fcm->sendToToken(
+                $deviceToken->token,
+                ['title' => $title, 'body' => $body],
+                array_merge(['type' => $type], $data),
+                $recipient instanceof Client ? $recipient->id : null,
+                $type,
+            );
+        }
     }
 }
