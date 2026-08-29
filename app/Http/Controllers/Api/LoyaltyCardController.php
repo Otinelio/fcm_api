@@ -13,8 +13,10 @@ use Illuminate\Support\Facades\DB;
 
 class LoyaltyCardController extends Controller
 {
-    public function __construct(private readonly ReferralService $referralService)
-    {
+    public function __construct(
+        private readonly ReferralService $referralService,
+        private readonly \App\Services\NotificationDispatcher $notifications,
+    ) {
     }
 
     /**
@@ -103,6 +105,15 @@ class LoyaltyCardController extends Controller
         // il faut le lire ici, `load()` ne le préserve pas forcément.
         $wasRecentlyCreated = $card->wasRecentlyCreated;
 
+        if ($wasRecentlyCreated) {
+            $this->notifications->send(
+                $restaurant,
+                'merchant_new_client',
+                'Nouveau client 👋',
+                "{$client->first_name} a rejoint votre programme de fidélité.",
+            );
+        }
+
         $card->load(['restaurant', 'loyaltyProgram']);
 
         return response()->json([
@@ -157,6 +168,13 @@ class LoyaltyCardController extends Controller
 
             return $card;
         });
+
+        $this->notifications->send(
+            $restaurant,
+            'merchant_new_client',
+            'Nouveau client 👋',
+            "{$client->first_name} a rejoint votre programme de fidélité.",
+        );
 
         $card->load(['restaurant', 'loyaltyProgram']);
 
