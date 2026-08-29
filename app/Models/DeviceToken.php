@@ -6,10 +6,10 @@ use Illuminate\Database\Eloquent\Model;
 
 class DeviceToken extends Model
 {
-    protected $fillable = ['user_id', 'token', 'platform', 'last_used_at'];
+    protected $fillable = ['tokenable_type', 'tokenable_id', 'token', 'platform', 'last_used_at'];
 
-public function user()
+public function tokenable()
 {
-    return $this->belongsTo(User::class);
+    return $this->morphTo();
 }
 }

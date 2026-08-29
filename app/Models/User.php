@@ -34,7 +34,7 @@ class User extends Authenticatable
     }
     public function deviceTokens()
     {
-        return $this->hasMany(DeviceToken::class);
+        return $this->morphMany(DeviceToken::class, 'tokenable');
     }
 
     public function notificationLogs()

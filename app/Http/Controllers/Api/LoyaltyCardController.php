@@ -122,14 +122,19 @@ class LoyaltyCardController extends Controller
             ], 422);
         }
 
-        $alreadyMember = LoyaltyCard::where('client_id', $client->id)
+        $existingCard = LoyaltyCard::where('client_id', $client->id)
             ->where('restaurant_id', $referrerCard->restaurant_id)
-            ->exists();
+            ->first();
 
-        if ($alreadyMember) {
+        if ($existingCard) {
+            $existingCard->load(['restaurant', 'loyaltyProgram']);
+
             return response()->json([
                 'message' => 'Vous êtes déjà membre de ce commerce, le parrainage ne peut plus s\'appliquer.',
-            ], 422);
+                'card' => $existingCard,
+                'was_recently_created' => false,
+                'via_referral' => true,
+            ], 201);
         }
 
         $restaurant = $referrerCard->restaurant;

@@ -127,6 +127,11 @@ class Restaurant extends Authenticatable
         return $this->hasMany(StaffUser::class);
     }
 
+    public function deviceTokens()
+    {
+        return $this->morphMany(DeviceToken::class, 'tokenable');
+    }
+
     /**
      * Vérifie si le programme de fidélité (step2/step3, config carte) a été
      * créé — signal d'onboarding réellement terminé, contrairement à

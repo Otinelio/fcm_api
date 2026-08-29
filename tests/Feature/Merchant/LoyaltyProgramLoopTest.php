@@ -98,8 +98,10 @@ class LoyaltyProgramLoopTest extends TestCase
         $this->assertSame(0, $card->fresh()->progress['stamps_current']);
         $this->assertSame(2, \App\Models\LoyaltyReward::where('loyalty_card_id', $card->id)->count());
 
-        // Niveau ACTUEL du nouveau cycle : reparti à zéro.
+        // Niveau ACTUEL du nouveau cycle : reparti à zéro — clé "bronze"
+        // (premier palier), jamais le fallback "custom" de levelKey(null).
         $this->assertNull($card->fresh()->level['name']);
+        $this->assertSame('bronze', $card->fresh()->level['key']);
 
         // Niveau MAXIMUM historique : conserve "Or", ne redescend pas.
         $this->assertSame('Or', $card->fresh()->max_level_name);
