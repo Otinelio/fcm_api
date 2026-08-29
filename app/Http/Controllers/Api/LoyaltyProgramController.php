@@ -92,6 +92,15 @@ class LoyaltyProgramController extends Controller
                             'validity_days' => $data['birthday_reward_validity_days'] ?? null,
                             'surprise' => $data['birthday_reward_surprise'] ?? false,
                         ],
+                        // Récompense de parrainage — voir `ReferralService::validateFirstOperation()`.
+                        // `enabled` par défaut à `true` (absent = récompense
+                        // générique accordée) pour que le parrainage
+                        // fonctionne dès l'activation du programme, même
+                        // sans réglage explicite du marchand.
+                        'referral_reward' => [
+                            'enabled' => $data['referral_reward_enabled'] ?? true,
+                            'label' => $data['referral_reward_label'] ?? null,
+                        ],
                     ],
                 ],
             );

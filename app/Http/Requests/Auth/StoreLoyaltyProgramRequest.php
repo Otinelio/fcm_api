@@ -55,6 +55,10 @@ class StoreLoyaltyProgramRequest extends FormRequest
             // à la place) tant qu'elle n'est pas utilisée — le marchand voit
             // toujours le vrai titre. Défaut `false`.
             'birthday_reward_surprise'       => ['sometimes', 'boolean'],
+            // Récompense de parrainage — indépendante du mode, un seul
+            // réglage par commerce. Voir `App\Services\Referral\ReferralService`.
+            'referral_reward_enabled'        => ['sometimes', 'boolean'],
+            'referral_reward_label'          => ['nullable', 'string', 'max:255'],
             // Taux de conversion mode "Achat" (FCFA pour 1 point) — 100 par
             // défaut côté Flutter, réglable par restaurant.
             'fcfa_per_point'          => ['nullable', 'integer', 'min:1', 'max:1000000'],

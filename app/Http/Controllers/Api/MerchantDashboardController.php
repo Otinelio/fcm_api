@@ -10,6 +10,7 @@ use App\Models\LoyaltyProgram;
 use App\Models\LoyaltyReward;
 use App\Models\Restaurant;
 use App\Services\Loyalty\LoyaltyTierService;
+use App\Services\Referral\ReferralService;
 use App\Support\CurrentActor;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -26,6 +27,10 @@ use Illuminate\Validation\ValidationException;
  */
 class MerchantDashboardController extends Controller
 {
+    public function __construct(private readonly ReferralService $referralService)
+    {
+    }
+
     /**
      * GET /api/merchant/clients
      *
@@ -468,6 +473,11 @@ class MerchantDashboardController extends Controller
                 'updated_at' => now(),
             ]);
 
+            // Si cette opération est la toute première du filleul sur cette
+            // carte et qu'un parrainage est en attente, la valide et
+            // débloque la récompense du parrain — voir `ReferralService`.
+            $this->referralService->validateFirstOperation($loyaltyCard);
+
             $loyaltyCard->update([
                 'cashback_balance_fcfa' => $loyaltyCard->cashback_balance_fcfa + $earnedFcfa,
                 'last_activity_at' => now(),
@@ -880,6 +890,11 @@ class MerchantDashboardController extends Controller
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
+
+            // Si cette opération est la toute première du filleul sur cette
+            // carte et qu'un parrainage est en attente, la valide et
+            // débloque la récompense du parrain — voir `ReferralService`.
+            $this->referralService->validateFirstOperation($loyaltyCard);
 
             // Signal historique de fin de cycle — vaut aussi bien pour un
             // mono-palier (boucle) que pour un multi-palier (boucle ou

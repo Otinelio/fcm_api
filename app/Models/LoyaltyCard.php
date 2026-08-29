@@ -16,6 +16,8 @@ class LoyaltyCard extends Model
         'loyalty_program_id',
         'card_code',
         'qr_token',
+        'referral_code',
+        'referral_qr_token',
         'progress',
         'cashback_balance_fcfa',
         'vip_tier',
@@ -167,18 +169,38 @@ class LoyaltyCard extends Model
     public function getLevelAttribute(): ?array
     {
         $resolved = app(LoyaltyTierService::class)->resolve($this);
+
+        if ($resolved['level_name'] === null && $resolved['tiers'] === []) {
+            return null;
+        }
+
+        // Programme multi-palier mais aucun palier encore atteint (client
+        // tout juste ajouté, 0 tampon/point/cashback à vie) : `position` et
+        // `level_name` sont `null` ici (voir `LoyaltyTierService::resolve`).
+        // `levelKey(null)` retomberait sur son fallback `'custom'` (« Fidèle »,
+        // le DERNIER palier) — un client qui débute doit afficher le premier
+        // palier (Bronze), pas le dernier.
+        if ($resolved['position'] === null) {
+            return [
+                'name'            => null,
+                'key'             => 'bronze',
+                'percent_to_next' => $resolved['percent_to_next'],
+                'is_max_level'    => false,
+                'position'        => 1,
+                'icon_key'        => null,
+            ];
+        }
+
         $tierService = app(LoyaltyTierService::class);
 
-        return $resolved['level_name'] === null && $resolved['tiers'] === []
-            ? null
-            : [
-                'name'            => $resolved['level_name'],
-                'key'             => $tierService->levelKey($resolved['level_name']),
-                'percent_to_next' => $resolved['percent_to_next'],
-                'is_max_level'    => $resolved['is_max_level'],
-                'position'        => $resolved['position'],
-                'icon_key'        => $resolved['icon_key'],
-            ];
+        return [
+            'name'            => $resolved['level_name'],
+            'key'             => $tierService->levelKey($resolved['level_name']),
+            'percent_to_next' => $resolved['percent_to_next'],
+            'is_max_level'    => $resolved['is_max_level'],
+            'position'        => $resolved['position'],
+            'icon_key'        => $resolved['icon_key'],
+        ];
     }
 
     /** Roadmap des paliers (vide si un seul palier configuré) — pour la vue "progression" côté client. */
@@ -202,18 +224,20 @@ class LoyaltyCard extends Model
     protected static function booted(): void
     {
         static::creating(function (LoyaltyCard $card) {
-            $card->card_code ??= self::generateCardCode();
+            $card->card_code ??= self::generateUniqueCode('card_code');
             $card->qr_token ??= (string) Str::uuid();
+            $card->referral_code ??= self::generateUniqueCode('referral_code');
+            $card->referral_qr_token ??= (string) Str::uuid();
             $card->status ??= 'active';
             $card->progress ??= ['stamps_current' => 0];
         });
     }
 
-    private static function generateCardCode(): string
+    private static function generateUniqueCode(string $column): string
     {
         do {
             $code = Str::upper(Str::random(8));
-        } while (self::where('card_code', $code)->exists());
+        } while (self::where($column, $code)->exists());
 
         return $code;
     }

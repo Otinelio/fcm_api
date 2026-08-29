@@ -6,12 +6,17 @@ use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\LoyaltyCard;
 use App\Models\Restaurant;
+use App\Services\Referral\ReferralService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class LoyaltyCardController extends Controller
 {
+    public function __construct(private readonly ReferralService $referralService)
+    {
+    }
+
     /**
      * GET /api/loyalty-cards
      *
@@ -41,6 +46,13 @@ class LoyaltyCardController extends Controller
      * côté client — le `qr_token` est un UUID à 36 caractères, imprononçable
      * et illisible à taper à la main). Idempotent : un second scan renvoie
      * la même carte plutôt que d'en créer une autre.
+     *
+     * Reconnaît aussi un QR/code de parrainage (`referral_qr_token` ou
+     * `referral_code` d'une carte existante, préfixe `MIVAFID-REFERRAL:`
+     * optionnel) : dans ce cas l'établissement est résolu depuis la carte
+     * du parrain, et un `Referral` `pending` est créé — voir
+     * `ReferralService`. Aucune récompense n'est attribuée ici : elle ne
+     * l'est qu'à la première opération de fidélité du filleul.
      */
     public function join(Request $request): JsonResponse
     {
@@ -48,10 +60,24 @@ class LoyaltyCardController extends Controller
             'qr_token' => ['required', 'string'],
         ]);
 
-        $code = trim($request->qr_token);
+        /** @var Client $client */
+        $client = $request->user();
 
-        $restaurant = Restaurant::where('qr_token', strtolower($code))
-            ->orWhere('short_code', strtoupper($code))
+        $rawCode = trim($request->qr_token);
+        $lookupCode = str_starts_with($rawCode, ReferralService::QR_PREFIX)
+            ? substr($rawCode, strlen(ReferralService::QR_PREFIX))
+            : $rawCode;
+
+        $referrerCard = LoyaltyCard::where('referral_qr_token', strtolower($lookupCode))
+            ->orWhere('referral_code', strtoupper($lookupCode))
+            ->first();
+
+        if ($referrerCard) {
+            return $this->joinViaReferral($client, $referrerCard);
+        }
+
+        $restaurant = Restaurant::where('qr_token', strtolower($rawCode))
+            ->orWhere('short_code', strtoupper($rawCode))
             ->first();
 
         if (! $restaurant) {
@@ -67,9 +93,6 @@ class LoyaltyCardController extends Controller
                 'message' => 'Ce commerce n\'a pas encore activé de programme de fidélité.',
             ], 404);
         }
-
-        /** @var Client $client */
-        $client = $request->user();
 
         $card = LoyaltyCard::firstOrCreate(
             ['client_id' => $client->id, 'restaurant_id' => $restaurant->id],
@@ -88,6 +111,54 @@ class LoyaltyCardController extends Controller
                 : 'Vous êtes déjà membre de ce commerce.',
             'card' => $card,
             'was_recently_created' => $wasRecentlyCreated,
+        ], 201);
+    }
+
+    private function joinViaReferral(Client $client, LoyaltyCard $referrerCard): JsonResponse
+    {
+        if ($referrerCard->client_id === $client->id) {
+            return response()->json([
+                'message' => 'Vous ne pouvez pas utiliser votre propre code de parrainage.',
+            ], 422);
+        }
+
+        $alreadyMember = LoyaltyCard::where('client_id', $client->id)
+            ->where('restaurant_id', $referrerCard->restaurant_id)
+            ->exists();
+
+        if ($alreadyMember) {
+            return response()->json([
+                'message' => 'Vous êtes déjà membre de ce commerce, le parrainage ne peut plus s\'appliquer.',
+            ], 422);
+        }
+
+        $restaurant = $referrerCard->restaurant;
+        $program = $restaurant->loyaltyProgram;
+
+        if (! $program) {
+            return response()->json([
+                'message' => 'Ce commerce n\'a pas encore activé de programme de fidélité.',
+            ], 404);
+        }
+
+        $card = DB::transaction(function () use ($client, $restaurant, $program, $referrerCard) {
+            $card = LoyaltyCard::create([
+                'client_id' => $client->id,
+                'restaurant_id' => $restaurant->id,
+                'loyalty_program_id' => $program->id,
+            ]);
+
+            $this->referralService->attach($referrerCard, $card);
+
+            return $card;
+        });
+
+        $card->load(['restaurant', 'loyaltyProgram']);
+
+        return response()->json([
+            'message' => 'Carte de fidélité rejointe grâce à un parrainage.',
+            'card' => $card,
+            'was_recently_created' => true,
         ], 201);
     }
 

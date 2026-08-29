@@ -49,18 +49,15 @@ class ClientAuthController extends Controller
      * POST /api/auth/register
      *
      * Inscription classique : first_name, phone, password (+confirmation),
-     * birthdate (optionnel), city (optionnel), referral_code (optionnel).
+     * birthdate (optionnel), city (optionnel).
+     *
+     * Le parrainage se fait désormais au join d'un établissement (QR de
+     * parrainage par carte de fidélité — voir `LoyaltyCardController::join()`
+     * et `ReferralService`), plus au signup.
      */
     public function register(RegisterRequest $request): JsonResponse
     {
         $data = $request->validated();
-
-        // Gérer le parrainage
-        $referredByClientId = null;
-        if (! empty($data['referral_code'])) {
-            $referrer = Client::where('referral_code', $data['referral_code'])->first();
-            $referredByClientId = $referrer?->id;
-        }
 
         $client = Client::create([
             'uuid'                  => (string) Str::uuid(),
@@ -70,8 +67,6 @@ class ClientAuthController extends Controller
             'birthdate'             => $data['birthdate'] ?? null,
             'city'                  => $data['city'] ?? null,
             'country'               => $data['country'] ?? null,
-            'referral_code'         => $this->generateReferralCode(),
-            'referred_by_client_id' => $referredByClientId,
         ]);
 
         $token = $client->createToken('mobile-app')->plainTextToken;
@@ -220,7 +215,6 @@ class ClientAuthController extends Controller
             'last_name'     => $request->last_name,
             'phone'         => $request->phone,
             'birthdate'     => $request->birthdate,
-            'referral_code' => $client->referral_code ?? $this->generateReferralCode(),
         ];
 
         // Champs optionnels envoyés par le front
@@ -386,25 +380,12 @@ class ClientAuthController extends Controller
             'city'           => $client->city,
             'country'        => $client->country,
             'avatar_url'     => $client->avatar_url,
-            'referral_code'  => $client->referral_code,
             'oauth_provider' => $client->oauth_provider,
             'is_profile_complete' => $client->isProfileComplete(),
             // Date d'inscription — alimente le "Membre depuis" du profil côté
             // mobile, qui retombait sinon sur la date du jour à chaque appel.
             'created_at'     => $client->created_at?->toIso8601String(),
         ];
-    }
-
-    /**
-     * Génère un code de parrainage unique (8 caractères alphanumérique majuscule).
-     */
-    private function generateReferralCode(): string
-    {
-        do {
-            $code = strtoupper(Str::random(8));
-        } while (Client::where('referral_code', $code)->exists());
-
-        return $code;
     }
 
     // ─────────────────────────────────────────────────────────

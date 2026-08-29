@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\LoyaltyProgramController;
 use App\Http\Controllers\Api\LoyaltyRewardController;
 use App\Http\Controllers\Api\MerchantCampaignController;
 use App\Http\Controllers\Api\MerchantDashboardController;
+use App\Http\Controllers\Api\ReferralController;
 use App\Http\Controllers\Api\RestaurantAuthController;
 use App\Http\Controllers\Api\RewardAckController;
 use App\Http\Controllers\Api\StaffAuthController;
@@ -101,7 +102,10 @@ Route::middleware(['auth:sanctum', 'staff.active'])->prefix('merchant')->group(f
 
     Route::get('/campaigns', [MerchantCampaignController::class, 'index'])->middleware('admin.only');
     Route::get('/campaigns/recipients', [MerchantCampaignController::class, 'recipients'])->middleware('admin.only');
+    Route::get('/campaigns/recipients-list', [MerchantCampaignController::class, 'recipientsList'])->middleware('admin.only');
     Route::post('/campaigns', [MerchantCampaignController::class, 'store'])->middleware('admin.only');
+
+    Route::get('/referrals', [ReferralController::class, 'forRestaurant'])->middleware('admin.only');
 });
 
 Route::middleware('auth:sanctum')->prefix('loyalty-cards')->group(function () {
@@ -112,6 +116,8 @@ Route::middleware('auth:sanctum')->prefix('loyalty-cards')->group(function () {
 });
 
 Route::middleware('auth:sanctum')->get('/rewards', [LoyaltyRewardController::class, 'index']);
+
+Route::middleware('auth:sanctum')->get('/referrals', [ReferralController::class, 'mine']);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Autres routes existantes
@@ -170,14 +176,19 @@ Route::post('/customers/{customer}/add-point', [LoyaltyController::class, 'addPo
 
 Route::middleware('auth:sanctum')->post('/device-tokens', function (Request $request) {
     $request->validate(['token' => 'required|string']);
+    $actor = $request->user();
 
-    // Important : un token ne peut appartenir qu'à un seul user à la fois.
-    // S'il existait déjà rattaché à un autre user (device revendu/partagé), on le détache.
+    // Important : un token ne peut appartenir qu'à un seul compte à la fois
+    // (Client, Restaurant ou User). S'il existait déjà rattaché à un autre
+    // compte (device revendu/partagé), on le détache.
     DeviceToken::where('token', $request->token)
-        ->where('user_id', '!=', $request->user()->id)
+        ->where(function ($query) use ($actor) {
+            $query->where('tokenable_type', '!=', $actor::class)
+                ->orWhere('tokenable_id', '!=', $actor->getKey());
+        })
         ->delete();
 
-    $request->user()->deviceTokens()->updateOrCreate(
+    $actor->deviceTokens()->updateOrCreate(
         ['token' => $request->token],
         ['platform' => $request->platform, 'last_used_at' => now()]
     );
@@ -202,11 +213,13 @@ Route::middleware('auth:sanctum')->post('/simulate', function (Request $request)
             );
         }
     } elseif ($request->type === 'birthday') {
-        // Manually trigger the birthday notification logic for this user
-        // We set their birthday to today just for the simulation
-        $user->update(['birthday' => now()->format('Y-m-d')]);
+        // Déclenche manuellement la logique anniversaire pour ce compte —
+        // ne fonctionne que pour un Client authentifié (seul `birthdate`
+        // existe sur ce modèle, pas sur `Restaurant`).
+        if ($user instanceof \App\Models\Client) {
+            $user->update(['birthdate' => now()->format('Y-m-d')]);
+        }
 
-        // Call the command manually
         Artisan::call('notifications:birthdays');
     } elseif ($request->type === 'vip') {
         // Send a notification to the 'vip_customers' topic

@@ -33,7 +33,6 @@ class RegisterRequest extends FormRequest
             'birthdate'             => ['nullable', 'date', 'before:today'],
             'city'                  => ['nullable', 'string', 'max:100'],
             'country'               => ['nullable', 'string', 'max:100'],
-            'referral_code'         => ['nullable', 'string', 'exists:clients,referral_code'],
         ];
     }
 
@@ -59,7 +58,6 @@ class RegisterRequest extends FormRequest
             'password.min'         => 'Le mot de passe doit contenir au moins 8 caractères.',
             'password.confirmed'   => 'Les mots de passe ne correspondent pas.',
             'birthdate.before'     => 'La date de naissance doit être antérieure à aujourd\'hui.',
-            'referral_code.exists' => 'Ce code de parrainage est invalide.',
         ];
     }
 }

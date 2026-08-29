@@ -24,8 +24,6 @@ class Client extends Authenticatable
         'city',
         'country',
         'avatar_url',
-        'referral_code',
-        'referred_by_client_id',
         'fcm_token',
         'oauth_provider',
         'oauth_id',
@@ -109,13 +107,18 @@ class Client extends Authenticatable
         return $this->hasMany(\App\Models\ClientRestaurantGeoOptin::class ?? null, 'client_id');
     }
 
-    public function referrer()
+    public function referralsMade()
     {
-        return $this->belongsTo(self::class, 'referred_by_client_id');
+        return $this->hasMany(Referral::class, 'referrer_client_id');
     }
 
-    public function referrals()
+    public function referralReceived()
     {
-        return $this->hasMany(self::class, 'referred_by_client_id');
+        return $this->hasOne(Referral::class, 'referred_client_id');
+    }
+
+    public function deviceTokens()
+    {
+        return $this->morphMany(DeviceToken::class, 'tokenable');
     }
 }

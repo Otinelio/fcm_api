@@ -336,7 +336,7 @@ class AuditScenariosTest extends TestCase
         $response->assertJsonStructure([
             'access_token',
             'token_type',
-            'client' => ['id', 'uuid', 'first_name', 'phone', 'referral_code'],
+            'client' => ['id', 'uuid', 'first_name', 'phone'],
         ]);
 
         $this->assertDatabaseHas('clients', [
@@ -348,28 +348,6 @@ class AuditScenariosTest extends TestCase
         $me = $this->withHeader('Authorization', "Bearer {$token}")->getJson('/api/auth/me');
         $me->assertOk();
         $me->assertJsonPath('client.phone', '+22891000031');
-    }
-
-    public function test_register_links_referrer_via_referral_code(): void
-    {
-        $referrer = $this->classicClient([
-            'phone'         => '+22891000032',
-            'referral_code' => 'PARRAIN1',
-        ]);
-
-        $response = $this->postJson('/api/auth/register', [
-            'first_name'            => 'Filleul',
-            'phone'                 => '+22891000033',
-            'password'              => 'password123',
-            'password_confirmation' => 'password123',
-            'referral_code'         => 'PARRAIN1',
-        ]);
-
-        $response->assertCreated();
-        $this->assertDatabaseHas('clients', [
-            'phone'                 => '+22891000033',
-            'referred_by_client_id' => $referrer->id,
-        ]);
     }
 
     public function test_complete_social_profile_fills_missing_fields_on_an_authenticated_social_client(): void
@@ -396,6 +374,5 @@ class AuditScenariosTest extends TestCase
             'id'    => $client->id,
             'phone' => '+22891000034',
         ]);
-        $this->assertNotNull($client->fresh()->referral_code);
     }
 }
