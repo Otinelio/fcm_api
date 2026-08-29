@@ -93,13 +93,22 @@ class FcmService
             ]);
 
         if ($response->successful()) {
-            // Enregistrer dans l'historique si un userId est fourni
+            // Enregistrer dans l'historique si un userId est fourni. Colonnes
+            // alignées sur le schéma réel de `notification_logs` (voir
+            // `2026_07_20_000011_create_notification_logs_table.php` :
+            // `client_id`/`channel`/`status`, pas de `user_id`/`type`/`title`/
+            // `body`) — l'ancien insert visait un schéma qui n'a jamais existé
+            // en base, il levait systématiquement une `PDOException` après
+            // l'envoi FCM réussi, faisant échouer le job et le faire retenter
+            // par le worker de queue : chaque tentative renvoyait le push,
+            // produisant plusieurs notifications réelles sur l'appareil pour
+            // un seul événement (ex. parrainage validé) avant l'abandon final
+            // en `failed_jobs`.
             if ($userId) {
                 NotificationLog::create([
-                    'user_id' => $userId,
-                    'type' => $type,
-                    'title' => $notification['title'] ?? '',
-                    'body' => $notification['body'] ?? '',
+                    'client_id' => $userId,
+                    'channel' => 'fcm',
+                    'status' => 'sent',
                     'sent_at' => now(),
                 ]);
             }

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\SendPromoNotification;
 use App\Models\Client;
 use App\Models\LoyaltyCard;
 use App\Models\LoyaltyProgram;
@@ -10,6 +11,7 @@ use App\Models\Referral;
 use App\Models\Restaurant;
 use App\Services\Referral\ReferralService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -123,21 +125,23 @@ class ReferralTest extends TestCase
         $this->assertSame(0, Referral::count());
     }
 
-    public function test_already_member_cannot_be_retroactively_referred(): void
+    public function test_already_member_scanning_referral_qr_again_returns_existing_card(): void
     {
         [$restaurant, $program] = $this->restaurantWithProgram();
         [$parrain] = $this->clientWithToken('+22890000006');
         $parrainCard = $this->cardFor($parrain, $restaurant, $program);
 
         [$filleul, $token] = $this->clientWithToken('+22890000007');
-        $this->cardFor($filleul, $restaurant, $program); // déjà membre
+        $existingCard = $this->cardFor($filleul, $restaurant, $program); // déjà membre
 
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson('/api/loyalty-cards/join', [
                 'qr_token' => ReferralService::QR_PREFIX.$parrainCard->referral_qr_token,
             ]);
 
-        $response->assertStatus(422);
+        $response->assertCreated();
+        $response->assertJsonPath('was_recently_created', false);
+        $response->assertJsonPath('card.id', $existingCard->id);
         $this->assertSame(0, Referral::count());
     }
 
@@ -255,5 +259,52 @@ class ReferralTest extends TestCase
 
         $response->assertOk();
         $response->assertJsonCount(1, 'referrals');
+    }
+
+    public function test_referrer_is_notified_when_referred_joins_and_again_when_validated(): void
+    {
+        Bus::fake();
+
+        [$restaurant, $program] = $this->restaurantWithProgram();
+        [$parrain] = $this->clientWithToken('+22890000017');
+        $parrainCard = $this->cardFor($parrain, $restaurant, $program);
+        $parrain->deviceTokens()->create(['token' => 'device-token-parrain', 'platform' => 'android']);
+
+        [, $filleulToken] = $this->clientWithToken('+22890000018');
+        $this->withHeader('Authorization', "Bearer {$filleulToken}")
+            ->postJson('/api/loyalty-cards/join', [
+                'qr_token' => ReferralService::QR_PREFIX.$parrainCard->referral_qr_token,
+            ])->assertCreated();
+
+        // Le simple scan/join notifie déjà A, une seule fois, sans mention de récompense.
+        Bus::assertDispatchedTimes(SendPromoNotification::class, 1);
+        Bus::assertDispatched(function (SendPromoNotification $job) use ($parrain) {
+            $notification = (fn () => $this->notification)->call($job);
+            return (fn () => $this->userId)->call($job) === $parrain->id
+                && str_contains($notification['title'], 'en cours');
+        });
+
+        $filleulCard = LoyaltyCard::where('restaurant_id', $restaurant->id)
+            ->where('id', '!=', $parrainCard->id)
+            ->first();
+
+        $this->app['auth']->forgetGuards();
+        $merchantToken = $restaurant->createToken('merchant-app')->plainTextToken;
+        $this->withHeader('Authorization', "Bearer {$merchantToken}")
+            ->postJson("/api/merchant/clients/{$filleulCard->id}/stamps")
+            ->assertOk();
+
+        // Première opération : un deuxième envoi, distinct, "validé".
+        Bus::assertDispatchedTimes(SendPromoNotification::class, 2);
+        Bus::assertDispatched(function (SendPromoNotification $job) {
+            $notification = (fn () => $this->notification)->call($job);
+            return str_contains($notification['title'], 'validé');
+        });
+
+        // Une deuxième opération du filleul ne doit pas en redéclencher un troisième.
+        $this->withHeader('Authorization', "Bearer {$merchantToken}")
+            ->postJson("/api/merchant/clients/{$filleulCard->id}/stamps")
+            ->assertOk();
+        Bus::assertDispatchedTimes(SendPromoNotification::class, 2);
     }
 }

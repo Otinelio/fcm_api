@@ -3,6 +3,7 @@
 namespace App\Services\Referral;
 
 use App\Jobs\SendPromoNotification;
+use App\Models\Client;
 use App\Models\LoyaltyCard;
 use App\Models\LoyaltyReward;
 use App\Models\Referral;
@@ -36,7 +37,7 @@ class ReferralService
      */
     public function attach(LoyaltyCard $referrerCard, LoyaltyCard $referredCard): Referral
     {
-        return Referral::create([
+        $referral = Referral::create([
             'restaurant_id' => $referredCard->restaurant_id,
             'referrer_client_id' => $referrerCard->client_id,
             'referrer_card_id' => $referrerCard->id,
@@ -44,6 +45,10 @@ class ReferralService
             'referred_card_id' => $referredCard->id,
             'status' => 'pending',
         ]);
+
+        $this->notifyPending($referral);
+
+        return $referral;
     }
 
     /**
@@ -96,12 +101,18 @@ class ReferralService
             ]);
 
             if ($reward !== null) {
-                $this->notifyReferrer($referral);
+                $this->notifyValidated($referral);
             }
         });
     }
 
-    private function notifyReferrer(Referral $referral): void
+    /**
+     * Notifie le parrain dès que le filleul rejoint via son QR — avant toute
+     * récompense, purement informatif ("X a rejoint grâce à vous"). Distincte
+     * de [notifyValidated] : le simple scan ne débloque jamais de récompense,
+     * ce message ne le laisse pas entendre.
+     */
+    private function notifyPending(Referral $referral): void
     {
         $referrer = $referral->referrerClient()->first();
         if (! $referrer) {
@@ -110,11 +121,31 @@ class ReferralService
 
         $referredName = $referral->referredClient()->first()?->first_name ?? 'Un ami';
 
-        foreach ($referrer->deviceTokens as $deviceToken) {
-            SendPromoNotification::dispatch($referrer->id, $deviceToken->token, [
-                'title' => 'Parrainage validé 🎉',
-                'body' => "{$referredName} a rejoint le programme grâce à vous — votre récompense est débloquée !",
-            ]);
+        $this->notifyClient($referrer, [
+            'title' => 'Parrainage en cours 👀',
+            'body' => "{$referredName} a rejoint grâce à votre parrainage — votre récompense arrive dès sa première visite !",
+        ]);
+    }
+
+    private function notifyValidated(Referral $referral): void
+    {
+        $referrer = $referral->referrerClient()->first();
+        if (! $referrer) {
+            return;
+        }
+
+        $referredName = $referral->referredClient()->first()?->first_name ?? 'Un ami';
+
+        $this->notifyClient($referrer, [
+            'title' => 'Parrainage validé 🎉',
+            'body' => "{$referredName} a rejoint le programme grâce à vous — votre récompense est débloquée !",
+        ]);
+    }
+
+    private function notifyClient(Client $client, array $notification): void
+    {
+        foreach ($client->deviceTokens as $deviceToken) {
+            SendPromoNotification::dispatch($client->id, $deviceToken->token, $notification);
         }
     }
 }
