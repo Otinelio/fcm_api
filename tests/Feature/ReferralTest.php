@@ -2,16 +2,16 @@
 
 namespace Tests\Feature;
 
-use App\Jobs\SendPromoNotification;
 use App\Models\Client;
 use App\Models\LoyaltyCard;
 use App\Models\LoyaltyProgram;
 use App\Models\LoyaltyReward;
+use App\Models\Notification;
 use App\Models\Referral;
 use App\Models\Restaurant;
+use App\Services\Fcm\FcmService;
 use App\Services\Referral\ReferralService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -263,12 +263,14 @@ class ReferralTest extends TestCase
 
     public function test_referrer_is_notified_when_referred_joins_and_again_when_validated(): void
     {
-        Bus::fake();
-
         [$restaurant, $program] = $this->restaurantWithProgram();
         [$parrain] = $this->clientWithToken('+22890000017');
         $parrainCard = $this->cardFor($parrain, $restaurant, $program);
         $parrain->deviceTokens()->create(['token' => 'device-token-parrain', 'platform' => 'android']);
+
+        $this->mock(FcmService::class, function ($mock) {
+            $mock->shouldReceive('sendToToken')->twice()->andReturn(true);
+        });
 
         [, $filleulToken] = $this->clientWithToken('+22890000018');
         $this->withHeader('Authorization', "Bearer {$filleulToken}")
@@ -277,12 +279,12 @@ class ReferralTest extends TestCase
             ])->assertCreated();
 
         // Le simple scan/join notifie déjà A, une seule fois, sans mention de récompense.
-        Bus::assertDispatchedTimes(SendPromoNotification::class, 1);
-        Bus::assertDispatched(function (SendPromoNotification $job) use ($parrain) {
-            $notification = (fn () => $this->notification)->call($job);
-            return (fn () => $this->userId)->call($job) === $parrain->id
-                && str_contains($notification['title'], 'en cours');
-        });
+        $this->assertDatabaseHas('notifications', [
+            'notifiable_type' => $parrain->getMorphClass(),
+            'notifiable_id' => $parrain->id,
+            'type' => 'referral_pending',
+        ]);
+        $this->assertSame(1, Notification::where('type', 'referral_pending')->count());
 
         $filleulCard = LoyaltyCard::where('restaurant_id', $restaurant->id)
             ->where('id', '!=', $parrainCard->id)
@@ -294,17 +296,17 @@ class ReferralTest extends TestCase
             ->postJson("/api/merchant/clients/{$filleulCard->id}/stamps")
             ->assertOk();
 
-        // Première opération : un deuxième envoi, distinct, "validé".
-        Bus::assertDispatchedTimes(SendPromoNotification::class, 2);
-        Bus::assertDispatched(function (SendPromoNotification $job) {
-            $notification = (fn () => $this->notification)->call($job);
-            return str_contains($notification['title'], 'validé');
-        });
+        // Première opération : une deuxième ligne in-app, distincte, "validée".
+        $this->assertDatabaseHas('notifications', [
+            'notifiable_type' => $parrain->getMorphClass(),
+            'notifiable_id' => $parrain->id,
+            'type' => 'referral_validated',
+        ]);
 
         // Une deuxième opération du filleul ne doit pas en redéclencher un troisième.
         $this->withHeader('Authorization', "Bearer {$merchantToken}")
             ->postJson("/api/merchant/clients/{$filleulCard->id}/stamps")
             ->assertOk();
-        Bus::assertDispatchedTimes(SendPromoNotification::class, 2);
+        $this->assertSame(1, Notification::where('type', 'referral_validated')->count());
     }
 }

@@ -2,11 +2,10 @@
 
 namespace App\Services\Referral;
 
-use App\Jobs\SendPromoNotification;
-use App\Models\Client;
 use App\Models\LoyaltyCard;
 use App\Models\LoyaltyReward;
 use App\Models\Referral;
+use App\Services\NotificationDispatcher;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -26,6 +25,10 @@ class ReferralService
 
     /** Utilisée quand l'établissement n'a configuré aucune récompense de parrainage. */
     private const DEFAULT_REWARD_TITLE = 'Récompense de parrainage';
+
+    public function __construct(private readonly NotificationDispatcher $notifications)
+    {
+    }
 
     /**
      * Crée le parrainage `pending` reliant la carte du filleul à celle du
@@ -121,10 +124,12 @@ class ReferralService
 
         $referredName = $referral->referredClient()->first()?->first_name ?? 'Un ami';
 
-        $this->notifyClient($referrer, [
-            'title' => 'Parrainage en cours 👀',
-            'body' => "{$referredName} a rejoint grâce à votre parrainage — votre récompense arrive dès sa première visite !",
-        ]);
+        $this->notifications->send(
+            $referrer,
+            'referral_pending',
+            'Parrainage en cours 👀',
+            "{$referredName} a rejoint grâce à votre parrainage — votre récompense arrive dès sa première visite !",
+        );
     }
 
     private function notifyValidated(Referral $referral): void
@@ -136,16 +141,11 @@ class ReferralService
 
         $referredName = $referral->referredClient()->first()?->first_name ?? 'Un ami';
 
-        $this->notifyClient($referrer, [
-            'title' => 'Parrainage validé 🎉',
-            'body' => "{$referredName} a rejoint le programme grâce à vous — votre récompense est débloquée !",
-        ]);
-    }
-
-    private function notifyClient(Client $client, array $notification): void
-    {
-        foreach ($client->deviceTokens as $deviceToken) {
-            SendPromoNotification::dispatch($client->id, $deviceToken->token, $notification);
-        }
+        $this->notifications->send(
+            $referrer,
+            'referral_validated',
+            'Parrainage validé 🎉',
+            "{$referredName} a rejoint le programme grâce à vous — votre récompense est débloquée !",
+        );
     }
 }
