@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\LoyaltyProgramController;
 use App\Http\Controllers\Api\LoyaltyRewardController;
 use App\Http\Controllers\Api\MerchantCampaignController;
 use App\Http\Controllers\Api\MerchantDashboardController;
+use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\ReferralController;
 use App\Http\Controllers\Api\RestaurantAuthController;
 use App\Http\Controllers\Api\RewardAckController;
@@ -106,6 +107,15 @@ Route::middleware(['auth:sanctum', 'staff.active'])->prefix('merchant')->group(f
     Route::post('/campaigns', [MerchantCampaignController::class, 'store'])->middleware('admin.only');
 
     Route::get('/referrals', [ReferralController::class, 'forRestaurant'])->middleware('admin.only');
+
+    Route::prefix('notifications')->group(function () {
+        Route::get('/', [NotificationController::class, 'index']);
+        Route::get('/unread-count', [NotificationController::class, 'unreadCount']);
+        Route::post('/read-all', [NotificationController::class, 'markAllRead']);
+        Route::post('/{notification}/read', [NotificationController::class, 'markRead']);
+        Route::delete('/{notification}', [NotificationController::class, 'destroy']);
+        Route::delete('/', [NotificationController::class, 'destroyAll']);
+    });
 });
 
 Route::middleware('auth:sanctum')->prefix('loyalty-cards')->group(function () {
@@ -196,8 +206,13 @@ Route::middleware('auth:sanctum')->post('/device-tokens', function (Request $req
     return response()->noContent();
 });
 
-Route::middleware('auth:sanctum')->get('/notifications', function (Request $request) {
-    return $request->user()->notificationLogs()->latest()->paginate(20);
+Route::middleware('auth:sanctum')->prefix('notifications')->group(function () {
+    Route::get('/', [NotificationController::class, 'index']);
+    Route::get('/unread-count', [NotificationController::class, 'unreadCount']);
+    Route::post('/read-all', [NotificationController::class, 'markAllRead']);
+    Route::post('/{notification}/read', [NotificationController::class, 'markRead']);
+    Route::delete('/{notification}', [NotificationController::class, 'destroy']);
+    Route::delete('/', [NotificationController::class, 'destroyAll']);
 });
 
 Route::middleware('auth:sanctum')->post('/simulate', function (Request $request) {
