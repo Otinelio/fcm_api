@@ -27,7 +27,10 @@ use Illuminate\Validation\ValidationException;
  */
 class MerchantDashboardController extends Controller
 {
-    public function __construct(private readonly ReferralService $referralService)
+    public function __construct(
+        private readonly ReferralService $referralService,
+        private readonly \App\Services\NotificationDispatcher $notifications,
+    )
     {
     }
 
@@ -517,6 +520,13 @@ class MerchantDashboardController extends Controller
         foreach (LoyaltyReward::whereIn('id', $createdRewardIds)->get() as $reward) {
             $reward->setRelation('loyaltyCard', $freshCard);
             LoyaltyRewardUpdated::dispatch($reward);
+            $this->notifications->send(
+                $freshCard->client,
+                'reward_unlocked',
+                'Récompense débloquée 🎁',
+                "Récompense débloquée : {$reward->title}",
+                ['reward_id' => $reward->id],
+            );
         }
 
         return response()->json([
@@ -938,6 +948,13 @@ class MerchantDashboardController extends Controller
         foreach (LoyaltyReward::whereIn('id', $createdRewardIds)->get() as $reward) {
             $reward->setRelation('loyaltyCard', $freshCard);
             LoyaltyRewardUpdated::dispatch($reward);
+            $this->notifications->send(
+                $freshCard->client,
+                'reward_unlocked',
+                'Récompense débloquée 🎁',
+                "Récompense débloquée : {$reward->title}",
+                ['reward_id' => $reward->id],
+            );
         }
 
         $message = match (true) {
