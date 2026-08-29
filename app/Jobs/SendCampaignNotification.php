@@ -6,6 +6,7 @@ use App\Models\Client;
 use App\Models\NotificationCampaign;
 use App\Models\NotificationLog;
 use App\Services\Fcm\FcmService;
+use App\Services\NotificationDispatcher;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -27,7 +28,7 @@ class SendCampaignNotification implements ShouldQueue
     ) {
     }
 
-    public function handle(FcmService $fcm): void
+    public function handle(FcmService $fcm, NotificationDispatcher $notifications): void
     {
         $campaign = NotificationCampaign::find($this->campaignId);
         $client = Client::with('deviceTokens')->find($this->clientId);
@@ -35,6 +36,14 @@ class SendCampaignNotification implements ShouldQueue
         if (! $campaign || ! $client) {
             return;
         }
+
+        $notifications->recordOnly(
+            $client,
+            'campaign',
+            $campaign->title,
+            $campaign->message,
+            ['campaign_id' => $campaign->id],
+        );
 
         if ($client->deviceTokens->isEmpty()) {
             NotificationLog::create([
