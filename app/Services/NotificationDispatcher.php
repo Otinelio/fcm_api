@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Events\NotificationCreated;
 use App\Events\RewardUnlocked;
 use App\Models\Client;
 use App\Models\Notification;
@@ -25,6 +26,8 @@ class NotificationDispatcher
         'birthday' => true,
         'campaign' => true,
         'admin_broadcast' => true,
+        'cashback_received' => true,
+        'level_up' => true,
         'merchant_new_client' => false,
         'merchant_low_sms' => false,
         'merchant_weekly_report' => false,
@@ -82,7 +85,7 @@ class NotificationDispatcher
      */
     public function recordOnly(Model $recipient, string $type, string $title, string $body, array $data = []): Notification
     {
-        return Notification::create([
+        $notification = Notification::create([
             'notifiable_type' => $recipient->getMorphClass(),
             'notifiable_id' => $recipient->getKey(),
             'type' => $type,
@@ -90,6 +93,10 @@ class NotificationDispatcher
             'body' => $body,
             'data' => $data,
         ]);
+
+        event(new NotificationCreated($notification));
+
+        return $notification;
     }
 
     private function pushToRecipient(Model $recipient, string $type, string $title, string $body, array $data): void

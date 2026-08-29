@@ -26,6 +26,12 @@ class CampaignThrottle
 
     public function isWithinSendWindow(?Carbon $at = null): bool
     {
+        // Coupure temporaire pour tests manuels (`CAMPAIGN_SEND_WINDOW_ENABLED=false`
+        // en local) — jamais désactivée en test automatisé, voir phpunit.xml.
+        if (! config('services.campaigns.send_window_enabled', true)) {
+            return true;
+        }
+
         $hour = ($at ?? now())->hour;
 
         return $hour >= self::WINDOW_START_HOUR && $hour < self::WINDOW_END_HOUR;

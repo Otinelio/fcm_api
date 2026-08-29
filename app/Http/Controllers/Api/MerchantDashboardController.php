@@ -453,6 +453,11 @@ class MerchantDashboardController extends Controller
         $tierService = app(LoyaltyTierService::class);
         $tiers = $tierService->tiers($program);
 
+        // Capturé avant toute mutation — seul moyen de détecter un
+        // changement de niveau (`LoyaltyCard::level` est un accesseur
+        // recalculé à la lecture, jamais stocké).
+        $levelKeyBefore = $loyaltyCard->level['key'] ?? null;
+
         $amountFcfa = (float) $request->input('amount_fcfa');
         $percentage = (float) ($program->config['cashback_percentage'] ?? 0);
         $earnedFcfa = round($amountFcfa * $percentage / 100, 2);
@@ -516,6 +521,26 @@ class MerchantDashboardController extends Controller
 
         $freshCard = $loyaltyCard->fresh()->load(['client', 'loyaltyProgram']);
         LoyaltyCardUpdated::dispatch($freshCard);
+
+        $this->notifications->send(
+            $freshCard->client,
+            'cashback_received',
+            'Cashback reçu 💰',
+            number_format($earnedFcfa, 0, ',', ' ')." FCFA de cashback crédités chez {$restaurant->name}.",
+            ['card_id' => $freshCard->id],
+        );
+
+        $levelAfter = $freshCard->level;
+        $levelKeyAfter = $levelAfter['key'] ?? null;
+        if ($levelKeyAfter !== null && $levelKeyAfter !== $levelKeyBefore) {
+            $this->notifications->send(
+                $freshCard->client,
+                'level_up',
+                'Nouveau niveau 🏆',
+                "Vous êtes maintenant niveau {$levelAfter['name']} chez {$restaurant->name} !",
+                ['card_id' => $freshCard->id, 'level_name' => $levelAfter['name']],
+            );
+        }
 
         foreach (LoyaltyReward::whereIn('id', $createdRewardIds)->get() as $reward) {
             $reward->setRelation('loyaltyCard', $freshCard);

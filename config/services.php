@@ -81,4 +81,11 @@ return [
         'client_id' => env('APPLE_CLIENT_ID'), // Bundle ID iOS
     ],
 
+    'campaigns' => [
+        // Coupure temporaire de la plage d'envoi 8h-20h (`CampaignThrottle`)
+        // pour tests manuels — remettre à `true` (ou retirer la variable)
+        // une fois les tests terminés.
+        'send_window_enabled' => (bool) env('CAMPAIGN_SEND_WINDOW_ENABLED', true),
+    ],
+
 ];

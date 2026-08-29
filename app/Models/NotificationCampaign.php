@@ -16,6 +16,7 @@ class NotificationCampaign extends Model
         'scheduled_at',
         'sent_at',
         'status',
+        'archived_at',
     ];
 
     protected function casts(): array
@@ -24,6 +25,7 @@ class NotificationCampaign extends Model
             'target' => 'array',
             'scheduled_at' => 'datetime',
             'sent_at' => 'datetime',
+            'archived_at' => 'datetime',
         ];
     }
 

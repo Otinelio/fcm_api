@@ -69,6 +69,10 @@ class CampaignStoreTest extends TestCase
 
     public function test_client_ids_outside_the_restaurant_are_ignored_not_sent_to(): void
     {
+        // Dans la plage d'envoi (8h-20h, voir `CampaignThrottle`) : sinon la
+        // campagne est reprogrammée au lieu d'être envoyée immédiatement, et
+        // aucun job n'est poussé pour cette assertion à le vérifier.
+        $this->travelTo(now()->setTime(10, 0));
         Queue::fake();
 
         [$restaurant, $token] = $this->restaurantWithToken();

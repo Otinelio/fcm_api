@@ -36,5 +36,8 @@
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <!-- Toujours la vraie plage d'envoi en test, quelle que soit la
+             coupure temporaire en local (voir .env). -->
+        <env name="CAMPAIGN_SEND_WINDOW_ENABLED" value="true"/>
     </php>
 </phpunit>

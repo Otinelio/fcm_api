@@ -93,7 +93,13 @@ class SendBirthdayNotifications extends Command
                     ? 'Une surprise vous attend chez '.($card->restaurant->name ?? 'votre commerce préféré').' pour votre anniversaire !'
                     : $title.' vous attend chez '.($card->restaurant->name ?? 'votre commerce préféré').' !';
 
-                $notifications->send($client, 'birthday', 'Joyeux anniversaire 🎂', $notificationBody);
+                $notifications->send(
+                    $client,
+                    'birthday',
+                    'Joyeux anniversaire 🎂',
+                    $notificationBody,
+                    ['reward_id' => $reward->id],
+                );
                 $notificationsSent++;
             }
         }

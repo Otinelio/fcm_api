@@ -105,6 +105,8 @@ Route::middleware(['auth:sanctum', 'staff.active'])->prefix('merchant')->group(f
     Route::get('/campaigns/recipients', [MerchantCampaignController::class, 'recipients'])->middleware('admin.only');
     Route::get('/campaigns/recipients-list', [MerchantCampaignController::class, 'recipientsList'])->middleware('admin.only');
     Route::post('/campaigns', [MerchantCampaignController::class, 'store'])->middleware('admin.only');
+    Route::post('/campaigns/{campaign}/archive', [MerchantCampaignController::class, 'archive'])->middleware('admin.only');
+    Route::put('/campaigns/{campaign}', [MerchantCampaignController::class, 'update'])->middleware('admin.only');
 
     Route::get('/referrals', [ReferralController::class, 'forRestaurant'])->middleware('admin.only');
 

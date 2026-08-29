@@ -35,6 +35,7 @@ class MerchantCampaignController extends Controller
         $restaurant = $request->user();
 
         $campaigns = NotificationCampaign::where('restaurant_id', $restaurant->id)
+            ->whereNull('archived_at')
             ->withCount([
                 'logs as delivered_count' => fn ($q) => $q->where('status', 'sent'),
                 'logs as failed_count' => fn ($q) => $q->where('status', 'failed'),
@@ -193,6 +194,85 @@ class MerchantCampaignController extends Controller
         return response()->json(['recipients' => $recipients]);
     }
 
+    /**
+     * PUT /api/merchant/campaigns/{campaign}
+     *
+     * Édite une campagne encore `scheduled` (message, destinataires, date) —
+     * une campagne `sent` n'est plus modifiable, les SMS sont déjà partis.
+     * Aucun débit de crédit ici : il n'a lieu qu'à l'envoi effectif (voir
+     * `DispatchScheduledCampaigns`), édition comprise.
+     */
+    public function update(Request $request, NotificationCampaign $campaign): JsonResponse
+    {
+        /** @var Restaurant $restaurant */
+        $restaurant = $request->user();
+
+        if ($campaign->restaurant_id !== $restaurant->id) {
+            abort(404);
+        }
+
+        if ($campaign->status !== 'scheduled') {
+            return response()->json([
+                'message' => 'Seule une campagne encore programmée peut être modifiée.',
+            ], 422);
+        }
+
+        $data = $request->validate([
+            'message'        => ['required', 'string', 'max:500'],
+            'recipient_type' => ['required', 'string', 'max:50'],
+            'client_ids'     => ['required', 'array', 'min:1'],
+            'client_ids.*'   => ['integer'],
+            'scheduled_at'   => ['required', 'date'],
+        ]);
+
+        $clientIds = \App\Models\LoyaltyCard::where('restaurant_id', $restaurant->id)
+            ->whereIn('client_id', $data['client_ids'])
+            ->pluck('client_id')
+            ->unique()
+            ->values();
+
+        if ($clientIds->isEmpty()) {
+            return response()->json([
+                'message' => 'Aucun destinataire valide pour ce commerce.',
+            ], 422);
+        }
+
+        $campaign->update([
+            'message' => $data['message'],
+            'target' => [
+                'recipient_type' => $data['recipient_type'],
+                'recipients_count' => $clientIds->count(),
+                'recipient_client_ids' => $clientIds->all(),
+            ],
+            'scheduled_at' => $data['scheduled_at'],
+        ]);
+
+        return response()->json([
+            'message' => 'Campagne modifiée.',
+            'campaign' => $this->campaignData($campaign->fresh()),
+        ]);
+    }
+
+    /**
+     * POST /api/merchant/campaigns/{campaign}/archive
+     *
+     * Masque la campagne de l'historique (`index()`) sans la supprimer —
+     * réversible en base, juste `archived_at` posé.
+     */
+    public function archive(Request $request, NotificationCampaign $campaign): JsonResponse
+    {
+        /** @var Restaurant $restaurant */
+        $restaurant = $request->user();
+
+        if ($campaign->restaurant_id !== $restaurant->id) {
+            abort(404);
+        }
+
+        $campaign->update(['archived_at' => now()]);
+
+        return response()->json(['message' => 'Campagne archivée.']);
+    }
+
     private function campaignData(NotificationCampaign $campaign): array
     {
         $target = $campaign->target ?? [];
@@ -201,6 +281,7 @@ class MerchantCampaignController extends Controller
             'id'               => (string) $campaign->id,
             'message'          => $campaign->message,
             'recipient_type'   => $target['recipient_type'] ?? 'all',
+            'recipient_ids'    => $target['recipient_client_ids'] ?? [],
             'recipients_count' => (int) ($target['recipients_count'] ?? 0),
             'status'           => $campaign->status,
             'scheduled_at'     => $campaign->scheduled_at,

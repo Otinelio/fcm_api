@@ -2,12 +2,15 @@
 
 namespace Tests\Feature;
 
+use App\Events\NotificationCreated;
 use App\Models\Client;
 use App\Models\Notification;
 use App\Models\Restaurant;
 use App\Services\Fcm\FcmService;
 use App\Services\NotificationDispatcher;
+use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -105,5 +108,59 @@ class NotificationDispatcherTest extends TestCase
         );
 
         $this->assertSame(1, Notification::where('type', 'campaign')->count());
+    }
+
+    public function test_recording_a_notification_for_a_client_broadcasts_on_its_loyalty_channel(): void
+    {
+        Event::fake([NotificationCreated::class]);
+
+        $client = Client::create([
+            'uuid' => (string) Str::uuid(),
+            'first_name' => 'Cy',
+            'phone' => '+22890000104',
+            'password' => bcrypt('secret123'),
+        ]);
+
+        $notification = app(NotificationDispatcher::class)->recordOnly(
+            $client,
+            'campaign',
+            'Titre',
+            'Corps',
+        );
+
+        Event::assertDispatched(NotificationCreated::class, function ($event) use ($notification, $client) {
+            $channels = $event->broadcastOn();
+
+            return $event->notification->is($notification)
+                && count($channels) === 1
+                && $channels[0] instanceof PrivateChannel
+                && $channels[0]->name === 'private-loyalty.' . $client->id;
+        });
+    }
+
+    public function test_recording_a_notification_for_a_restaurant_broadcasts_on_its_merchant_channel(): void
+    {
+        Event::fake([NotificationCreated::class]);
+
+        $restaurant = Restaurant::create([
+            'name' => 'Chez Awa',
+            'category' => 'Restaurant',
+            'email' => 'commerce-dispatcher-2@example.com',
+            'password' => bcrypt('password123'),
+        ]);
+
+        app(NotificationDispatcher::class)->recordOnly(
+            $restaurant,
+            'merchant_new_client',
+            'Titre',
+            'Corps',
+        );
+
+        Event::assertDispatched(NotificationCreated::class, function ($event) use ($restaurant) {
+            $channels = $event->broadcastOn();
+
+            return count($channels) === 1
+                && $channels[0]->name === 'private-merchant.' . $restaurant->id;
+        });
     }
 }

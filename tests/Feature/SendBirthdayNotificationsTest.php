@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Client;
 use App\Models\LoyaltyCard;
 use App\Models\LoyaltyProgram;
+use App\Models\LoyaltyReward;
 use App\Models\Notification;
 use App\Models\Restaurant;
 use App\Services\Fcm\FcmService;
@@ -59,5 +60,12 @@ class SendBirthdayNotificationsTest extends TestCase
             'type' => 'birthday',
         ]);
         $this->assertSame(1, Notification::where('type', 'birthday')->count());
+
+        $reward = LoyaltyReward::where('loyalty_card_id', $client->loyaltyCards()->first()->id)
+            ->where('source', 'birthday')->first();
+        $this->assertSame(
+            $reward->id,
+            Notification::where('type', 'birthday')->first()->data['reward_id'],
+        );
     }
 }
