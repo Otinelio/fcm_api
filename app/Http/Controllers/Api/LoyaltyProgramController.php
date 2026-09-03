@@ -100,6 +100,25 @@ class LoyaltyProgramController extends Controller
                         'referral_reward' => [
                             'enabled' => $data['referral_reward_enabled'] ?? true,
                             'label' => $data['referral_reward_label'] ?? null,
+                            'description' => $data['referral_reward_description'] ?? null,
+                            'validity_days' => $data['referral_reward_validity_days'] ?? null,
+                            'surprise' => $data['referral_reward_surprise'] ?? false,
+                            // Récompense du filleul — accordée immédiatement
+                            // à l'adhésion via parrainage, voir
+                            // `LoyaltyCardController::joinViaReferral`.
+                            'referred_enabled' => $data['referral_referred_reward_enabled'] ?? false,
+                            'referred_label' => $data['referral_referred_reward_label'] ?? null,
+                            'referred_description' => $data['referral_referred_reward_description'] ?? null,
+                            'referred_validity_days' => $data['referral_referred_reward_validity_days'] ?? null,
+                            'referred_surprise' => $data['referral_referred_reward_surprise'] ?? false,
+                        ],
+                        // Récompense de bienvenue (immédiate à l'adhésion)
+                        'welcome_reward' => [
+                            'enabled' => $data['welcome_reward_enabled'] ?? false,
+                            'title' => $data['welcome_reward_title'] ?? null,
+                            'description' => $data['welcome_reward_description'] ?? null,
+                            'validity_days' => $data['welcome_reward_validity_days'] ?? null,
+                            'surprise' => $data['welcome_reward_surprise'] ?? false,
                         ],
                     ],
                 ],

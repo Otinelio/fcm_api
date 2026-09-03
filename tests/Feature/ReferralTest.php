@@ -309,4 +309,47 @@ class ReferralTest extends TestCase
             ->assertOk();
         $this->assertSame(1, Notification::where('type', 'referral_validated')->count());
     }
+
+    public function test_referred_client_receives_referral_bonus_at_join_if_configured(): void
+    {
+        [$restaurant, $program] = $this->restaurantWithProgram('stamps', [
+            'goal' => 10,
+            'referral_reward' => [
+                'enabled' => true,
+                'label' => 'Récompense Parrain',
+                'referred_enabled' => true,
+                'referred_label' => 'Récompense Filleul',
+                'referred_validity_days' => 30,
+            ],
+        ]);
+        [$parrain] = $this->clientWithToken('+22890000019');
+        $parrainCard = $this->cardFor($parrain, $restaurant, $program);
+
+        [$filleul, $filleulToken] = $this->clientWithToken('+22890000020');
+
+        $response = $this->withHeader('Authorization', "Bearer {$filleulToken}")
+            ->postJson('/api/loyalty-cards/join', [
+                'qr_token' => ReferralService::QR_PREFIX.$parrainCard->referral_qr_token,
+            ]);
+
+        $response->assertCreated();
+        $response->assertJsonPath('was_recently_created', true);
+        $this->assertNotNull($response->json('referral_reward_id'));
+
+        $filleulCard = LoyaltyCard::where('client_id', $filleul->id)->first();
+        $this->assertNotNull($filleulCard);
+
+        $referralReward = LoyaltyReward::find($response->json('referral_reward_id'));
+        $this->assertNotNull($referralReward);
+        $this->assertSame($filleulCard->id, $referralReward->loyalty_card_id);
+        $this->assertSame('referral_bonus', $referralReward->source);
+        $this->assertSame('Récompense Filleul', $referralReward->title);
+
+        $this->assertDatabaseHas('referrals', [
+            'referred_card_id' => $filleulCard->id,
+            'status' => 'pending',
+            'referred_reward_loyalty_reward_id' => $referralReward->id,
+        ]);
+    }
 }
+

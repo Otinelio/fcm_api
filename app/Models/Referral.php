@@ -23,6 +23,7 @@ class Referral extends Model
         'status',
         'validated_at',
         'reward_loyalty_reward_id',
+        'referred_reward_loyalty_reward_id',
     ];
 
     protected function casts(): array
@@ -60,5 +61,11 @@ class Referral extends Model
     public function reward()
     {
         return $this->belongsTo(LoyaltyReward::class, 'reward_loyalty_reward_id');
+    }
+
+    /** Récompense accordée au filleul à l'adhésion (distincte de la récompense du parrain). */
+    public function referredReward()
+    {
+        return $this->belongsTo(LoyaltyReward::class, 'referred_reward_loyalty_reward_id');
     }
 }

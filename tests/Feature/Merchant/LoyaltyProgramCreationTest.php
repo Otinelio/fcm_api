@@ -294,4 +294,32 @@ class LoyaltyProgramCreationTest extends TestCase
 
         $this->assertSame('spend', $restaurant->fresh()->loyaltyProgram->type);
     }
+
+    public function test_creates_program_with_welcome_reward_configuration(): void
+    {
+        [$restaurant, $token] = $this->restaurantWithToken();
+
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/loyalty-programs', [
+                'mode' => 'stamps',
+                'tiers' => [
+                    ['goal' => 8, 'reward_description' => 'Café offert'],
+                ],
+                'welcome_reward_enabled' => true,
+                'welcome_reward_title' => 'Boisson de bienvenue',
+                'welcome_reward_description' => 'Offerte pour votre première visite',
+                'welcome_reward_validity_days' => 14,
+                'welcome_reward_surprise' => true,
+                ...$this->baseVisuals,
+            ]);
+
+        $response->assertCreated();
+        $program = $restaurant->fresh()->loyaltyProgram;
+        $this->assertTrue($program->config['welcome_reward']['enabled']);
+        $this->assertSame('Boisson de bienvenue', $program->config['welcome_reward']['title']);
+        $this->assertSame('Offerte pour votre première visite', $program->config['welcome_reward']['description']);
+        $this->assertSame(14, $program->config['welcome_reward']['validity_days']);
+        $this->assertTrue($program->config['welcome_reward']['surprise']);
+    }
 }
+

@@ -89,11 +89,17 @@ class ReferralService
 
             $reward = null;
             if ($config === null || ($config['enabled'] ?? true)) {
+                $validityDays = isset($config['validity_days']) && is_numeric($config['validity_days'])
+                    ? (int) $config['validity_days']
+                    : null;
+
                 $reward = LoyaltyReward::create([
                     'loyalty_card_id' => $referral->referrer_card_id,
                     'restaurant_id' => $referral->restaurant_id,
                     'source' => 'referral',
+                    'is_surprise' => (bool) ($config['surprise'] ?? false),
                     'title' => $config['label'] ?? self::DEFAULT_REWARD_TITLE,
+                    'expires_at' => $validityDays ? now()->addDays($validityDays) : null,
                 ]);
             }
 

@@ -23,7 +23,7 @@ class ReferralController extends Controller
         $client = $request->user();
 
         $referrals = Referral::where('referrer_client_id', $client->id)
-            ->with(['restaurant', 'referredClient', 'reward'])
+            ->with(['restaurant', 'referredClient', 'reward', 'referredReward'])
             ->orderByDesc('created_at')
             ->get();
 
@@ -42,7 +42,7 @@ class ReferralController extends Controller
         $restaurant = $request->user();
 
         $referrals = Referral::where('restaurant_id', $restaurant->id)
-            ->with(['referrerClient', 'referredClient', 'reward'])
+            ->with(['referrerClient', 'referredClient', 'reward', 'referredReward'])
             ->orderByDesc('created_at')
             ->get();
 

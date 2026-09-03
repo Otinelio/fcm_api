@@ -57,8 +57,25 @@ class StoreLoyaltyProgramRequest extends FormRequest
             'birthday_reward_surprise'       => ['sometimes', 'boolean'],
             // Récompense de parrainage — indépendante du mode, un seul
             // réglage par commerce. Voir `App\Services\Referral\ReferralService`.
-            'referral_reward_enabled'        => ['sometimes', 'boolean'],
-            'referral_reward_label'          => ['nullable', 'string', 'max:255'],
+            'referral_reward_enabled'              => ['sometimes', 'boolean'],
+            'referral_reward_label'                => ['nullable', 'string', 'max:255'],
+            'referral_reward_description'          => ['nullable', 'string', 'max:500'],
+            'referral_reward_validity_days'        => ['nullable', 'integer', 'min:1', 'max:365'],
+            'referral_reward_surprise'             => ['sometimes', 'boolean'],
+            // Récompense du filleul — accordée immédiatement à l'adhésion
+            // via parrainage, distincte de la welcome reward. Voir
+            // `LoyaltyCardController::joinViaReferral`.
+            'referral_referred_reward_enabled'       => ['sometimes', 'boolean'],
+            'referral_referred_reward_label'         => ['nullable', 'string', 'max:255'],
+            'referral_referred_reward_description'   => ['nullable', 'string', 'max:500'],
+            'referral_referred_reward_validity_days' => ['nullable', 'integer', 'min:1', 'max:365'],
+            'referral_referred_reward_surprise'      => ['sometimes', 'boolean'],
+            // Récompense de bienvenue — offerte à la 1ère adhésion
+            'welcome_reward_enabled'         => ['sometimes', 'boolean'],
+            'welcome_reward_title'           => ['nullable', 'required_if:welcome_reward_enabled,true', 'string', 'max:255'],
+            'welcome_reward_description'     => ['nullable', 'string', 'max:500'],
+            'welcome_reward_validity_days'   => ['nullable', 'integer', 'min:1', 'max:365'],
+            'welcome_reward_surprise'        => ['sometimes', 'boolean'],
             // Taux de conversion mode "Achat" (FCFA pour 1 point) — 100 par
             // défaut côté Flutter, réglable par restaurant.
             'fcfa_per_point'          => ['nullable', 'integer', 'min:1', 'max:1000000'],

@@ -67,11 +67,16 @@ class TransactionFraudDetectionService
         }
 
         if ($reason) {
+            $client = $card->client()->first();
+            $clientName = $client ? "{$client->first_name} {$client->last_name}" : 'un client';
+            $fullReason = "$reason (Client : $clientName)";
+
             $this->notifications->send(
                 $restaurant,
                 'fraud_alert',
                 'Action bloquée : Risque de fraude',
-                $reason
+                $fullReason,
+                ['client_id' => $card->client_id]
             );
 
             throw ValidationException::withMessages([
