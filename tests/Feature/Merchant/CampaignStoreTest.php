@@ -60,6 +60,7 @@ class CampaignStoreTest extends TestCase
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson('/api/merchant/campaigns', [
                 'message' => 'Promo',
+                'type' => 'promotion',
                 'recipient_type' => 'all',
             ]);
 
@@ -93,6 +94,7 @@ class CampaignStoreTest extends TestCase
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson('/api/merchant/campaigns', [
                 'message' => 'Promo',
+                'type' => 'promotion',
                 'recipient_type' => 'manual',
                 'client_ids' => [$mine->client_id, $notMine->client_id],
             ]);
@@ -124,6 +126,7 @@ class CampaignStoreTest extends TestCase
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson('/api/merchant/campaigns', [
                 'message' => 'Promo',
+                'type' => 'promotion',
                 'recipient_type' => 'manual',
                 'client_ids' => [$notMine->client_id],
             ]);
@@ -156,6 +159,7 @@ class CampaignStoreTest extends TestCase
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson('/api/merchant/campaigns', [
                 'message' => 'Promo',
+                'type' => 'promotion',
                 'recipient_type' => 'manual',
                 'client_ids' => [$mine->client_id, $notMine->client_id],
             ]);

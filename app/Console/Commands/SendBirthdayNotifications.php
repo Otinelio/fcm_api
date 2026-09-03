@@ -101,6 +101,16 @@ class SendBirthdayNotifications extends Command
                     ['reward_id' => $reward->id],
                 );
                 $notificationsSent++;
+
+                if ($card->restaurant) {
+                    $notifications->send(
+                        $card->restaurant,
+                        'merchant_birthday_reward',
+                        'Récompense anniversaire 🎂',
+                        "{$client->first_name} a reçu sa récompense anniversaire.",
+                        ['client_id' => $client->id, 'reward_id' => $reward->id],
+                    );
+                }
             }
         }
 

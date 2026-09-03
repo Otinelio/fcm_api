@@ -8,8 +8,10 @@ class NotificationCampaign extends Model
 {
     protected $fillable = [
         'restaurant_id',
+        'type',
         'title',
         'message',
+        'image_url',
         'kind',
         'trigger_type',
         'target',

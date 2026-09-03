@@ -51,8 +51,8 @@ class SendCampaignNotificationTest extends TestCase
             'notifiable_type' => $client->getMorphClass(),
             'notifiable_id' => $client->id,
             'type' => 'campaign',
-            'title' => 'Campagne SMS',
-            'body' => 'Weekend -20% !',
+            'title' => 'Chez Awa',
+            'body' => 'Campagne SMS — Weekend -20% !',
         ]);
         $this->assertDatabaseHas('notification_logs', [
             'notification_campaign_id' => $campaign->id,

@@ -130,6 +130,16 @@ class ReferralService
             'Parrainage en cours 👀',
             "{$referredName} a rejoint grâce à votre parrainage — votre récompense arrive dès sa première visite !",
         );
+
+        $restaurant = \App\Models\Restaurant::find($referral->restaurant_id);
+        if ($restaurant) {
+            $this->notifications->send(
+                $restaurant,
+                'merchant_referral_new',
+                'Nouveau parrainage 🤝',
+                "{$referredName} a rejoint grâce au parrainage de {$referrer->first_name}.",
+            );
+        }
     }
 
     private function notifyValidated(Referral $referral): void
@@ -147,5 +157,15 @@ class ReferralService
             'Parrainage validé 🎉',
             "{$referredName} a rejoint le programme grâce à vous — votre récompense est débloquée !",
         );
+
+        $restaurant = \App\Models\Restaurant::find($referral->restaurant_id);
+        if ($restaurant) {
+            $this->notifications->send(
+                $restaurant,
+                'merchant_referral_valid',
+                'Parrainage validé ✅',
+                "{$referredName} a effectué sa première opération — parrainage confirmé.",
+            );
+        }
     }
 }

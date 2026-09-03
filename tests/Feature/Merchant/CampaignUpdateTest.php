@@ -52,6 +52,7 @@ class CampaignUpdateTest extends TestCase
             'message' => 'Message original',
             'kind' => 'manual',
             'target' => [
+                'type' => 'promotion',
                 'recipient_type' => 'manual',
                 'recipients_count' => count($clientIds),
                 'recipient_client_ids' => $clientIds,
@@ -75,6 +76,7 @@ class CampaignUpdateTest extends TestCase
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->putJson("/api/merchant/campaigns/{$campaign->id}", [
                 'message' => 'Message modifié',
+                'type' => 'promotion',
                 'recipient_type' => 'manual',
                 'client_ids' => [$a->client_id, $b->client_id],
                 'scheduled_at' => $newSchedule->toIso8601String(),
@@ -101,6 +103,7 @@ class CampaignUpdateTest extends TestCase
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->putJson("/api/merchant/campaigns/{$campaign->id}", [
                 'message' => 'Trop tard',
+                'type' => 'promotion',
                 'recipient_type' => 'manual',
                 'client_ids' => [$a->client_id],
                 'scheduled_at' => now()->addDay()->toIso8601String(),
@@ -126,6 +129,7 @@ class CampaignUpdateTest extends TestCase
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->putJson("/api/merchant/campaigns/{$campaign->id}", [
                 'message' => 'Intrus',
+                'type' => 'promotion',
                 'recipient_type' => 'manual',
                 'client_ids' => [$a->client_id],
                 'scheduled_at' => now()->addDay()->toIso8601String(),
@@ -155,6 +159,7 @@ class CampaignUpdateTest extends TestCase
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->putJson("/api/merchant/campaigns/{$campaign->id}", [
                 'message' => 'Message modifié',
+                'type' => 'promotion',
                 'recipient_type' => 'manual',
                 'client_ids' => [$mine->client_id, $notMine->client_id],
                 'scheduled_at' => now()->addDay()->toIso8601String(),

@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\MerchantDashboardController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\ReferralController;
 use App\Http\Controllers\Api\RestaurantAuthController;
+use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\RewardAckController;
 use App\Http\Controllers\Api\StaffAuthController;
 use App\Http\Controllers\Api\TeamController;
@@ -93,22 +94,26 @@ Route::middleware(['auth:sanctum', 'staff.active'])->prefix('merchant')->group(f
     Route::get('/clients/lookup', [MerchantDashboardController::class, 'lookup'])->middleware('throttle:merchant-lookup');
     Route::get('/clients/{loyaltyCard}', [MerchantDashboardController::class, 'showClient']);
     Route::get('/clients/{loyaltyCard}/history', [MerchantDashboardController::class, 'clientHistory']);
-    Route::post('/clients/{loyaltyCard}/stamps', [MerchantDashboardController::class, 'addStamp']);
-    Route::delete('/clients/{loyaltyCard}/stamps', [MerchantDashboardController::class, 'removeStamp']);
-    Route::post('/clients/{loyaltyCard}/redeem-cashback', [MerchantDashboardController::class, 'redeemCashback']);
+Route::post('/clients/{loyaltyCard}/stamps', [MerchantDashboardController::class, 'addStamp']);
+     Route::delete('/clients/{loyaltyCard}/stamps', [MerchantDashboardController::class, 'removeStamp']);
+     Route::delete('/clients/{loyaltyCard}/cashback', [MerchantDashboardController::class, 'removeCashback']);
+     Route::post('/clients/{loyaltyCard}/redeem-cashback', [MerchantDashboardController::class, 'redeemCashback']);
 
     Route::get('/rewards/lookup', [MerchantDashboardController::class, 'lookupReward'])->middleware('throttle:merchant-lookup');
     Route::post('/rewards/{loyaltyReward}/redeem', [MerchantDashboardController::class, 'redeemReward']);
     Route::post('/rewards/{loyaltyReward}/cancel', [MerchantDashboardController::class, 'cancelReward']);
 
     Route::get('/campaigns', [MerchantCampaignController::class, 'index'])->middleware('admin.only');
+    Route::post('/campaigns/draft', [MerchantCampaignController::class, 'saveDraft'])->middleware('admin.only');
     Route::get('/campaigns/recipients', [MerchantCampaignController::class, 'recipients'])->middleware('admin.only');
     Route::get('/campaigns/recipients-list', [MerchantCampaignController::class, 'recipientsList'])->middleware('admin.only');
+    Route::get('/campaigns/{campaign}', [MerchantCampaignController::class, 'show'])->middleware('admin.only');
     Route::post('/campaigns', [MerchantCampaignController::class, 'store'])->middleware('admin.only');
     Route::post('/campaigns/{campaign}/archive', [MerchantCampaignController::class, 'archive'])->middleware('admin.only');
     Route::put('/campaigns/{campaign}', [MerchantCampaignController::class, 'update'])->middleware('admin.only');
 
     Route::get('/referrals', [ReferralController::class, 'forRestaurant'])->middleware('admin.only');
+    Route::get('/reviews', [ReviewController::class, 'index'])->middleware('admin.only');
 
     Route::prefix('notifications')->group(function () {
         Route::get('/', [NotificationController::class, 'index']);
@@ -131,6 +136,8 @@ Route::middleware('auth:sanctum')->get('/rewards', [LoyaltyRewardController::cla
 
 Route::middleware('auth:sanctum')->get('/referrals', [ReferralController::class, 'mine']);
 
+Route::middleware('auth:sanctum')->post('/reviews', [ReviewController::class, 'store']);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Autres routes existantes
 // ─────────────────────────────────────────────────────────────────────────────
@@ -149,13 +156,13 @@ use App\Http\Controllers\FedaPayWebhookController;
 Route::post('/webhooks/fedapay', [FedaPayWebhookController::class, 'handle']);
 
 // Legacy login route (users table) — garder pour rétrocompatibilité
-Route::post('/login', [AuthController::class, 'login']);
+// Route::post('/login', [AuthController::class, 'login']);
 
 Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
 
-use App\Http\Controllers\AuthController;
+// use App\Http\Controllers\AuthController;
 use App\Http\Controllers\PaymentController;
 use App\Jobs\SendPromoNotification;
 use App\Services\Fcm\FcmService;

@@ -55,7 +55,7 @@ class FcmService
         }
     }
 
-    public function sendToToken(string $deviceToken, array $notification, array $data = [], ?int $userId = null, string $type = 'promo'): bool
+    public function sendToToken(string $deviceToken, array $notification, array $data = [], ?int $userId = null, string $type = 'promo', ?string $imageUrl = null): bool
     {
         $projectId = config('services.firebase.project_id');
 
@@ -71,19 +71,25 @@ class FcmService
 
         if (!empty($notification)) {
             $message['notification'] = $notification;
+            if ($imageUrl) {
+                $message['notification']['image'] = $imageUrl;
+            }
             $message['android'] = [
                 'priority' => 'high',
                 'notification' => [
                     'sound' => 'default',
-                    'channel_id' => 'high_importance_channel'
+                    'channel_id' => 'high_importance_channel',
+                    ...($imageUrl ? ['image' => $imageUrl] : []),
                 ]
             ];
             $message['apns'] = [
                 'payload' => [
                     'aps' => [
-                        'sound' => 'default'
+                        'sound' => 'default',
+                        'mutable-content' => 1,
                     ]
-                ]
+                ],
+                ...($imageUrl ? ['fcm_options' => ['image' => $imageUrl]] : []),
             ];
         }
 

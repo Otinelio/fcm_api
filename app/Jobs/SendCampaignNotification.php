@@ -30,19 +30,52 @@ class SendCampaignNotification implements ShouldQueue
 
     public function handle(FcmService $fcm, NotificationDispatcher $notifications): void
     {
-        $campaign = NotificationCampaign::find($this->campaignId);
+        $campaign = NotificationCampaign::with('restaurant')->find($this->campaignId);
         $client = Client::with('deviceTokens')->find($this->clientId);
 
         if (! $campaign || ! $client) {
             return;
         }
 
+        // Le titre principal de la notification est le nom de l'établissement,
+        // pas le titre de la campagne — le marchand veut que le client voie
+        // immédiatement qui lui envoie le message.
+        $restaurantName = $campaign->restaurant?->name ?? '';
+        $notifTitle = $restaurantName ?: ($campaign->title ?? '');
+        $notifBody = $this->buildNotifBody($campaign->title, $campaign->message);
+
+        $campaignData = [
+            'campaign_id' => $campaign->id,
+            'campaign_type' => $campaign->type,
+            'restaurant_name' => $restaurantName,
+        ];
+        if ($campaign->image_url) {
+            $campaignData['image_url'] = $campaign->image_url;
+        }
+
+        $card = \App\Models\LoyaltyCard::where('client_id', $client->id)
+            ->where('restaurant_id', $campaign->restaurant_id)
+            ->first();
+
+        if ($card) {
+            $campaignData['card_id'] = (string) $card->id;
+            if ($campaign->type === 'reward') {
+                $reward = \App\Models\LoyaltyReward::where('loyalty_card_id', $card->id)
+                    ->where('status', 'available')
+                    ->orderByDesc('created_at')
+                    ->first();
+                if ($reward) {
+                    $campaignData['reward_id'] = (string) $reward->id;
+                }
+            }
+        }
+
         $notifications->recordOnly(
             $client,
             'campaign',
-            $campaign->title,
-            $campaign->message,
-            ['campaign_id' => $campaign->id],
+            $notifTitle,
+            $notifBody,
+            $campaignData,
         );
 
         if ($client->deviceTokens->isEmpty()) {
@@ -64,12 +97,28 @@ class SendCampaignNotification implements ShouldQueue
 
         try {
             foreach ($client->deviceTokens as $deviceToken) {
+                $fcmData = [
+                    'type' => 'campaign',
+                    'campaign_id' => (string) $campaign->id,
+                    'campaign_type' => $campaign->type,
+                    'restaurant_name' => $restaurantName,
+                ];
+                if ($campaign->image_url) {
+                    $fcmData['image_url'] = $campaign->image_url;
+                }
+                if ($card) {
+                    $fcmData['card_id'] = (string) $card->id;
+                    if (isset($campaignData['reward_id'])) {
+                        $fcmData['reward_id'] = $campaignData['reward_id'];
+                    }
+                }
                 $success = $fcm->sendToToken(
                     $deviceToken->token,
-                    ['title' => $campaign->title, 'body' => $campaign->message],
-                    ['type' => 'campaign', 'campaign_id' => (string) $campaign->id],
-                    null,
-                    'campaign'
+                    ['title' => $notifTitle, 'body' => $notifBody],
+                    $fcmData,
+                    $client->id,
+                    'campaign',
+                    $campaign->image_url
                 );
 
                 if ($success) {
@@ -100,5 +149,22 @@ class SendCampaignNotification implements ShouldQueue
             'failure_reason' => $sent ? null : $failureReason,
             'sent_at' => now(),
         ]);
+    }
+
+    /**
+     * Construit le corps de la notification en combinant titre de campagne et
+     * message. Le titre de la campagne apparaît en gras dans le body (le
+     * titre de la notif push étant réservé au nom de l'établissement).
+     */
+    private function buildNotifBody(?string $campaignTitle, ?string $campaignMessage): string
+    {
+        $title = trim($campaignTitle ?? '');
+        $message = trim($campaignMessage ?? '');
+
+        if ($title !== '' && $message !== '') {
+            return "{$title} — {$message}";
+        }
+
+        return $title !== '' ? $title : $message;
     }
 }

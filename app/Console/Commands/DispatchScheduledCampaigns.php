@@ -16,6 +16,7 @@ class DispatchScheduledCampaigns extends Command
     public function handle(CampaignThrottle $throttle): void
     {
         $due = NotificationCampaign::where('status', 'scheduled')
+            ->whereNull('archived_at')
             ->where('scheduled_at', '<=', now())
             ->get();
 
@@ -45,6 +46,18 @@ class DispatchScheduledCampaigns extends Command
             }
 
             $campaign->update(['status' => 'sent', 'sent_at' => now()]);
+            event(new \App\Events\CampaignUpdated($campaign));
+
+            if ($restaurant) {
+                app(\App\Services\NotificationDispatcher::class)->send(
+                    $restaurant,
+                    'merchant_campaign_sent',
+                    'Campagne envoyée 📨',
+                    "Votre campagne « {$campaign->title} » a été publiée à {$clientIds->count()} destinataire(s).",
+                    ['campaign_id' => $campaign->id],
+                );
+            }
+
             $sent++;
         }
 

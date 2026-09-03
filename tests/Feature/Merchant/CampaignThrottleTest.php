@@ -74,6 +74,7 @@ class CampaignThrottleTest extends TestCase
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson('/api/merchant/campaigns', [
                 'message' => 'Promo',
+                'type' => 'promotion',
                 'recipient_type' => 'manual',
                 'client_ids' => $clientIds,
             ]);
@@ -94,6 +95,7 @@ class CampaignThrottleTest extends TestCase
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson('/api/merchant/campaigns', [
                 'message' => 'Promo',
+                'type' => 'promotion',
                 'recipient_type' => 'manual',
                 'client_ids' => $clientIds,
             ]);
@@ -117,6 +119,7 @@ class CampaignThrottleTest extends TestCase
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson('/api/merchant/campaigns', [
                 'message' => 'Promo',
+                'type' => 'promotion',
                 'recipient_type' => 'manual',
                 'client_ids' => $clientIds,
             ]);
@@ -139,6 +142,7 @@ class CampaignThrottleTest extends TestCase
             'message' => 'Promo',
             'kind' => 'manual',
             'target' => [
+                'type' => 'promotion',
                 'recipient_type' => 'manual',
                 'recipients_count' => count($clientIds),
                 'recipient_client_ids' => $clientIds,

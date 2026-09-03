@@ -27,10 +27,23 @@ class NotificationDispatcher
         'campaign' => true,
         'admin_broadcast' => true,
         'cashback_received' => true,
+        'cashback_redeemed' => true,
         'level_up' => true,
-        'merchant_new_client' => false,
-        'merchant_low_sms' => false,
-        'merchant_weekly_report' => false,
+        'stamp_added' => true,
+        'points_added' => true,
+        'stamp_removed' => true,
+        'points_removed' => true,
+        'merchant_new_client' => true,
+        'merchant_low_sms' => true,
+        'merchant_weekly_report' => true,
+        'merchant_new_review' => true,
+        'merchant_campaign_sent' => true,
+        'merchant_birthday_reward' => true,
+        'merchant_referral_new' => true,
+        'merchant_referral_valid' => true,
+        'merchant_sms_low' => true,
+        'merchant_sms_depleted' => true,
+        'fraud_alert' => true,
     ];
 
     public function __construct(
@@ -72,7 +85,7 @@ class NotificationDispatcher
         $notification = $this->recordOnly($recipient, $type, $title, $body, $data);
 
         if (self::PUSH_ENABLED_TYPES[$type] ?? false) {
-            $this->pushToRecipient($recipient, $type, $title, $body, $data);
+            $this->pushToRecipient($recipient, $type, $title, $body, array_merge($data, ['notification_id' => (string) $notification->id]));
         }
 
         return $notification;

@@ -30,6 +30,7 @@ class MerchantDashboardController extends Controller
     public function __construct(
         private readonly ReferralService $referralService,
         private readonly \App\Services\NotificationDispatcher $notifications,
+        private readonly \App\Services\Fraud\TransactionFraudDetectionService $fraudDetectionService,
     )
     {
     }
@@ -270,7 +271,7 @@ class MerchantDashboardController extends Controller
      */
     public function removeStamp(Request $request, LoyaltyCard $loyaltyCard): JsonResponse
     {
-        $this->authorizeCard($request, $loyaltyCard);
+        $restaurant = $this->authorizeCard($request, $loyaltyCard);
 
         // Même verrou que `addStamp` : les deux opérations mutent
         // `stamps_current` sur la même carte, elles ne doivent jamais
@@ -425,6 +426,26 @@ class MerchantDashboardController extends Controller
                 LoyaltyRewardUpdated::dispatch($reward->fresh()->load('loyaltyCard.client'));
             }
 
+            $removedValue = abs((int) $lastStamp->value);
+            $freshProgram = $freshCard->loyaltyProgram;
+            if ($freshProgram?->type === 'spend') {
+                $this->notifications->send(
+                    $freshCard->client,
+                    'points_removed',
+                    'Points retirés',
+                    "{$removedValue} point(s) retirés chez {$restaurant->name}.",
+                    ['card_id' => $freshCard->id, 'value' => $removedValue],
+                );
+            } else {
+                $this->notifications->send(
+                    $freshCard->client,
+                    'stamp_removed',
+                    'Tampon retiré',
+                    "Un tampon a été retiré chez {$restaurant->name}.",
+                    ['card_id' => $freshCard->id, 'value' => 1],
+                );
+            }
+
             return response()->json([
                 'message' => 'Tampon retiré.',
                 'client' => $this->cardData($freshCard),
@@ -462,12 +483,27 @@ class MerchantDashboardController extends Controller
         $percentage = (float) ($program->config['cashback_percentage'] ?? 0);
         $earnedFcfa = round($amountFcfa * $percentage / 100, 2);
 
+        $this->fraudDetectionService->validateAndThrowIfSuspicious(
+            $loyaltyCard,
+            $program,
+            $amountFcfa,
+            $earnedFcfa,
+            'cashback_earn',
+            $restaurant
+        );
+
         $staffUserId = CurrentActor::resolve($request)->staffUser?->id;
         $restaurantId = $restaurant->id;
         $createdRewardIds = [];
 
+        // Solde avant ce gain — unique moyen de retrouver la valeur exacte
+        // d'avant le crédit pour `removeCashback` (le solde est une colonne,
+        // pas une ligne `loyalty_transactions` séparée). Capturé avant toute
+        // mutation, journalisé dans `meta.before`/`meta.after`.
+        $balanceBefore = (float) $loyaltyCard->cashback_balance_fcfa;
+
         DB::transaction(function () use (
-            $loyaltyCard, $program, $tierService, $earnedFcfa, $amountFcfa, $tiers, $restaurantId, $staffUserId, &$createdRewardIds,
+            $loyaltyCard, $program, $tierService, $earnedFcfa, $amountFcfa, $tiers, $restaurantId, $staffUserId, $balanceBefore, &$createdRewardIds,
         ) {
             DB::table('loyalty_transactions')->insert([
                 'loyalty_card_id' => $loyaltyCard->id,
@@ -477,6 +513,10 @@ class MerchantDashboardController extends Controller
                 'validation_method' => 'merchant_app',
                 'status' => 'valid',
                 'staff_user_id' => $staffUserId,
+                'meta' => json_encode([
+                    'before' => $balanceBefore,
+                    'after' => $balanceBefore + $earnedFcfa,
+                ]),
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
@@ -525,7 +565,7 @@ class MerchantDashboardController extends Controller
         $this->notifications->send(
             $freshCard->client,
             'cashback_received',
-            'Cashback reçu 💰',
+            'Cashback reçu',
             number_format($earnedFcfa, 0, ',', ' ')." FCFA de cashback crédités chez {$restaurant->name}.",
             ['card_id' => $freshCard->id],
         );
@@ -732,10 +772,148 @@ class MerchantDashboardController extends Controller
         $freshCard = $loyaltyCard->fresh()->load(['client', 'loyaltyProgram']);
         LoyaltyCardUpdated::dispatch($freshCard);
 
+        $this->notifications->send(
+            $freshCard->client,
+            'cashback_redeemed',
+            'Cashback utilisé',
+            number_format($redeemAmount, 0, ',', ' ')." FCFA utilisés chez {$restaurant->name}.",
+            ['card_id' => $freshCard->id, 'value' => $redeemAmount],
+        );
+
         return response()->json([
             'message' => 'Cashback utilisé.',
             'client' => $this->cardData($freshCard),
         ]);
+    }
+
+    /**
+     * DELETE /api/merchant/clients/{loyaltyCard}/cashback
+     *
+     * Retire le dernier crédit de cashback accordé sur cette carte (erreur
+     * de saisie, scan en double non intercepté...). Restaure le solde à sa
+     * valeur exacte d'avant ce gain (voir `meta.before` posé par
+     * `grantCashback`) et annule les récompenses de palier qu'il avait
+     * débloquées — refusé si l'une d'elles a déjà été utilisée par le
+     * client, pour ne jamais lui reprendre un avantage déjà consommé.
+     *
+     * Symétrique de `removeStamp` : append-only (nouvelle ligne
+     * `cashback_reversal` de valeur négative, `meta.reverses_transaction_id`),
+     * verrou Redis + relecture sous `lockForUpdate`.
+     */
+    public function removeCashback(Request $request, LoyaltyCard $loyaltyCard): JsonResponse
+    {
+        $restaurant = $this->authorizeCard($request, $loyaltyCard);
+        $program = $restaurant->loyaltyProgram;
+
+        if (! $program || $program->type !== 'cashback') {
+            return response()->json([
+                'message' => 'Ce programme ne gère pas de cashback.',
+            ], 422);
+        }
+
+        $lock = Cache::lock("remove-cashback:{$loyaltyCard->id}", 5);
+        if (! $lock->get()) {
+            return response()->json([
+                'message' => 'Retrait déjà en cours pour cette carte, réessayez dans un instant.',
+            ], 409);
+        }
+
+        try {
+            $lastEarn = DB::table('loyalty_transactions')
+                ->where('loyalty_card_id', $loyaltyCard->id)
+                ->where('type', 'cashback_earn')
+                ->where('status', 'valid')
+                ->orderByDesc('id')
+                ->first();
+
+            if (! $lastEarn) {
+                return response()->json(['message' => 'Aucun crédit de cashback à retirer.'], 422);
+            }
+
+            $meta = $lastEarn->meta ? json_decode((string) $lastEarn->meta, true) : null;
+            if (! is_array($meta) || ! array_key_exists('before', $meta)) {
+                return response()->json([
+                    'message' => 'Ce crédit de cashback a été enregistré avant la mise à jour du système et ne peut pas être retiré automatiquement.',
+                ], 422);
+            }
+
+            $staffUserId = CurrentActor::resolve($request)->staffUser?->id;
+
+            // Récompenses de palier débloquées par ce crédit (liées par la
+            // transaction d'origine) — à annuler si aucune n'est utilisée.
+            $rewards = LoyaltyReward::where('loyalty_transaction_id', $lastEarn->id)->get();
+
+            if ($rewards->contains(fn ($r) => $r->status === 'used')) {
+                return response()->json([
+                    'message' => 'Impossible de retirer ce crédit : une récompense qu\'il a débloquée a déjà été utilisée.',
+                ], 422);
+            }
+
+            DB::transaction(function () use ($loyaltyCard, $lastEarn, $meta, $staffUserId, $rewards) {
+                $rewards = LoyaltyReward::where('loyalty_transaction_id', $lastEarn->id)
+                    ->lockForUpdate()
+                    ->get();
+
+                abort_if(
+                    $rewards->contains(fn ($r) => $r->status === 'used'),
+                    422,
+                    'Impossible de retirer ce crédit : une récompense qu\'il a débloquée a déjà été utilisée.',
+                );
+
+                $loyaltyCard->update([
+                    'cashback_balance_fcfa' => $meta['before'],
+                    'last_activity_at' => now(),
+                ]);
+
+                foreach ($rewards as $reward) {
+                    $reward->update([
+                        'status' => 'canceled',
+                        'canceled_at' => now(),
+                        'cancel_reason' => 'Crédit cashback retiré par le marchand',
+                        'canceled_by_staff_user_id' => $staffUserId,
+                    ]);
+                }
+
+                // Append-only : nouvelle ligne inverse plutôt que mutation
+                // de la ligne d'origine. Valeur négative = miroir exact du
+                // gain ; `reverses_transaction_id` permet de retrouver la
+                // paire gain/retrait dans l'audit.
+                DB::table('loyalty_transactions')->insert([
+                    'loyalty_card_id' => $loyaltyCard->id,
+                    'type' => 'cashback_reversal',
+                    'value' => -abs((float) $lastEarn->value),
+                    'montant_commande_fcfa' => $lastEarn->montant_commande_fcfa,
+                    'validation_method' => 'merchant_app',
+                    'status' => 'valid',
+                    'staff_user_id' => $staffUserId,
+                    'meta' => json_encode(['reverses_transaction_id' => $lastEarn->id]),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            });
+
+            $freshCard = $loyaltyCard->fresh()->load(['client', 'loyaltyProgram']);
+            LoyaltyCardUpdated::dispatch($freshCard);
+
+            foreach ($rewards as $reward) {
+                LoyaltyRewardUpdated::dispatch($reward->fresh()->load('loyaltyCard.client'));
+            }
+
+            $this->notifications->send(
+                $freshCard->client,
+                'cashback_removed',
+                'Cashback retiré',
+                number_format(abs((float) $lastEarn->value), 0, ',', ' ')." FCFA de cashback retirés chez {$restaurant->name}.",
+                ['card_id' => $freshCard->id, 'value' => abs((float) $lastEarn->value)],
+            );
+
+            return response()->json([
+                'message' => 'Cashback retiré.',
+                'client' => $this->cardData($freshCard),
+            ]);
+        } finally {
+            $lock->release();
+        }
     }
 
     /**
@@ -764,6 +942,8 @@ class MerchantDashboardController extends Controller
                 'loyalty_transactions.value',
                 'loyalty_transactions.montant_commande_fcfa',
                 'loyalty_transactions.created_at',
+                'loyalty_transactions.is_suspicious',
+                'loyalty_transactions.suspicious_reason',
                 'staff_users.name as staff_name',
                 'staff_users.role as staff_role',
             ]);
@@ -782,6 +962,8 @@ class MerchantDashboardController extends Controller
             'value' => $numeric($row->value),
             'montant_commande_fcfa' => $numeric($row->montant_commande_fcfa),
             'created_at' => $row->created_at,
+            'is_suspicious' => (bool) $row->is_suspicious,
+            'suspicious_reason' => $row->suspicious_reason,
             'staff_name' => $row->staff_name,
             'staff_role' => $row->staff_role,
         ]);
@@ -816,6 +998,15 @@ class MerchantDashboardController extends Controller
                 ], 422);
             }
         }
+
+        $this->fraudDetectionService->validateAndThrowIfSuspicious(
+            $loyaltyCard,
+            $program,
+            $amountFcfa,
+            $earned,
+            'stamp',
+            $restaurant
+        );
 
         $tierService = app(LoyaltyTierService::class);
         $tiers = $tierService->tiers($program);
@@ -967,6 +1158,25 @@ class MerchantDashboardController extends Controller
         // pull-to-refresh (voir routes/channels.php, canal `loyalty.{clientId}`
         // déjà autorisé).
         LoyaltyCardUpdated::dispatch($freshCard);
+
+        $isSpendMode = $program->type === 'spend';
+        if ($isSpendMode) {
+            $this->notifications->send(
+                $freshCard->client,
+                'points_added',
+                'Points ajoutés',
+                "+{$earned} point(s) chez {$restaurant->name}.",
+                ['card_id' => $freshCard->id, 'value' => $earned],
+            );
+        } else {
+            $this->notifications->send(
+                $freshCard->client,
+                'stamp_added',
+                'Tampon ajouté',
+                "+1 tampon chez {$restaurant->name}.",
+                ['card_id' => $freshCard->id, 'value' => 1],
+            );
+        }
 
         // Une récompense fraîchement débloquée doit apparaître dans l'écran
         // "Mes récompenses" du client sans qu'il n'ait à tirer pour rafraîchir.
@@ -1164,14 +1374,131 @@ class MerchantDashboardController extends Controller
             ])
             ->all();
 
+        // ── Progression par programme (dashboard marchand) ──────────────
+        // La carte "Répartition VIP" (par niveau de fidélité) suffit pour
+        // les Tampons. Pour les programmes Achats (points/spend) et
+        // Cashback, le niveau de fidélité n'est pas la donnée centrale :
+        // le client regarde son solde de points ou sa cagnotte FCFA. On
+        // expose donc une segmentation par seuil de points (Achats) et
+        // par tranche de solde cashback + solde total (Cashback), pour
+        // que le dashboard montre la progression réelle de la clientèle.
+        $program = $restaurant->loyaltyProgram;
+        $programType = $program?->type ?? 'stamps';
+
+        $pointsDistribution = [];
+        $cashbackDistribution = [];
+        $cashbackTotalFcfa = 0;
+
+        $cards = LoyaltyCard::whereIn('id', $cardIds)->get();
+
+        if (in_array($programType, ['points', 'spend'], true)) {
+            $goals = $program?->tiers
+                ->pluck('goal')
+                ->filter()
+                ->sort()
+                ->values()
+                ->map(fn ($g) => (int) $g)
+                ->all();
+            if ($goals === []) {
+                $goals = [(int) ($program?->config['goal'] ?? 10)];
+            }
+            $pointsDistribution = $this->bucketByThresholds(
+                $cards->map(fn (LoyaltyCard $c) => (int) ($c->progress['stamps_current'] ?? 0))->all(),
+                $goals,
+            );
+        } elseif ($programType === 'cashback') {
+            $cashbackTotalFcfa = (int) $cards->sum('cashback_balance_fcfa');
+            $cashbackDistribution = $this->bucketByCashbackBrackets(
+                $cards->map(fn (LoyaltyCard $c) => (int) $c->cashback_balance_fcfa)->all(),
+            );
+        }
+
         return response()->json([
             'total_clients' => $cardIds->count(),
             'stamps_today' => $stampsToday,
             'active_rewards' => LoyaltyCard::whereIn('id', $cardIds)
                 ->where('status', 'reward_available')
                 ->count(),
+            'program_type' => $programType,
+            'cashback_total_fcfa' => $cashbackTotalFcfa,
+            'points_distribution' => $pointsDistribution,
+            'cashback_distribution' => $cashbackDistribution,
             'recent_activity' => $recent,
         ]);
+    }
+
+    /**
+     * Répartit une liste de valeurs entières en tranches délimitées par des
+     * seuils croissants (ex. paliers de points d'un programme Achats).
+     *
+     * @param  int[]  $values
+     * @param  int[]  $thresholds  Seuils strictement croissants.
+     * @return array{label: string, count: int}[]
+     */
+    private function bucketByThresholds(array $values, array $thresholds): array
+    {
+        if ($thresholds === []) {
+            return [];
+        }
+
+        sort($thresholds);
+        $buckets = [];
+        $prev = 0;
+        foreach ($thresholds as $i => $t) {
+            $t = (int) $t;
+            $label = $i === 0
+                ? "0 - " . ($t - 1)
+                : "{$prev} - " . ($t - 1);
+            $buckets[] = ['label' => $label, 'count' => 0, 'min' => $i === 0 ? 0 : $prev, 'max' => $t - 1];
+            $prev = $t;
+        }
+        $buckets[] = ['label' => "{$prev} et plus", 'count' => 0, 'min' => $prev, 'max' => PHP_INT_MAX];
+
+        foreach ($values as $v) {
+            foreach ($buckets as &$b) {
+                if ($v >= $b['min'] && $v <= $b['max']) {
+                    $b['count']++;
+                    break;
+                }
+            }
+        }
+        unset($b);
+
+        // Retire les tranches vides pour un affichage propre, mais garde
+        // l'ordre croissant.
+        return array_values(array_filter($buckets, fn ($b) => $b['count'] > 0));
+    }
+
+    /**
+     * Répartit les soldes cashback en tranches FCFA fixes, avec le total de
+     * la cagnotte par tranche — pour le dashboard mode Cashback.
+     *
+     * @param  int[]  $balances
+     * @return array{label: string, count: int, total_fcfa: int}[]
+     */
+    private function bucketByCashbackBrackets(array $balances): array
+    {
+        $brackets = [
+            ['label' => '0 FCFA', 'min' => 0, 'max' => 0],
+            ['label' => '1 - 999', 'min' => 1, 'max' => 999],
+            ['label' => '1 000 - 4 999', 'min' => 1000, 'max' => 4999],
+            ['label' => '5 000 - 14 999', 'min' => 5000, 'max' => 14999],
+            ['label' => '15 000 et plus', 'min' => 15000, 'max' => PHP_INT_MAX],
+        ];
+
+        $result = [];
+        foreach ($brackets as $b) {
+            $in = array_filter($balances, fn ($v) => $v >= $b['min'] && $v <= $b['max']);
+            if (count($in) > 0) {
+                $result[] = [
+                    'label' => $b['label'],
+                    'count' => count($in),
+                    'total_fcfa' => (int) array_sum($in),
+                ];
+            }
+        }
+
+        return array_values($result);
     }
 
     // ─────────────────────────────────────────────────────────
