@@ -91,7 +91,17 @@ class MerchantDashboardController extends Controller
         // raisonnable.
         if ($levelKey = trim((string) $request->query('level', ''))) {
             $cards = $cards
-                ->filter(fn (LoyaltyCard $card) => ($card->level['key'] ?? null) === $levelKey)
+                ->filter(function (LoyaltyCard $card) use ($levelKey) {
+                    $cardLevel = $card->level;
+                    if (! $cardLevel) {
+                        return false;
+                    }
+                    $key = $cardLevel['key'] ?? '';
+                    $name = mb_strtolower(trim((string) ($cardLevel['name'] ?? '')));
+                    $target = mb_strtolower(trim($levelKey));
+
+                    return $key === $target || $name === $target;
+                })
                 ->values();
         }
 
@@ -926,7 +936,9 @@ class MerchantDashboardController extends Controller
     {
         $this->authorizeCard($request, $loyaltyCard);
 
-        $entries = DB::table('loyalty_transactions')
+        $perPage = min((int) $request->query('per_page', 15), 100);
+
+        $paginated = DB::table('loyalty_transactions')
             ->leftJoin('staff_users', 'staff_users.id', '=', 'loyalty_transactions.staff_user_id')
             ->where('loyalty_transactions.loyalty_card_id', $loyaltyCard->id)
             // `stamp_reversal` : le retrait d'un tampon est une opération
@@ -936,8 +948,7 @@ class MerchantDashboardController extends Controller
             ->where('loyalty_transactions.status', 'valid')
             ->orderByDesc('loyalty_transactions.created_at')
             ->orderByDesc('loyalty_transactions.id')
-            ->limit(100)
-            ->get([
+            ->paginate($perPage, [
                 'loyalty_transactions.type',
                 'loyalty_transactions.value',
                 'loyalty_transactions.montant_commande_fcfa',
@@ -957,7 +968,7 @@ class MerchantDashboardController extends Controller
             return floor($float) == $float ? (int) $float : $float;
         };
 
-        $history = $entries->map(fn ($row) => [
+        $history = collect($paginated->items())->map(fn ($row) => [
             'type' => $row->type,
             'value' => $numeric($row->value),
             'montant_commande_fcfa' => $numeric($row->montant_commande_fcfa),
@@ -968,7 +979,14 @@ class MerchantDashboardController extends Controller
             'staff_role' => $row->staff_role,
         ]);
 
-        return response()->json(['history' => $history]);
+        return response()->json([
+            'history' => $history,
+            'meta' => [
+                'current_page' => $paginated->currentPage(),
+                'last_page' => $paginated->lastPage(),
+                'total' => $paginated->total(),
+            ],
+        ]);
     }
 
     private function grantStampOrPoints(
