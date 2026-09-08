@@ -28,8 +28,16 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
-    // Envoi OTP par SMS (repli quand WhatsApp échoue/indisponible) — voir
-    // `App\Services\Otp\Channels\SmsOtpChannel`.
+    // Communications unifiées via Zavu.dev (SMS, WhatsApp, Email)
+    'zavu' => [
+        'api_key'           => env('ZAVU_API_KEY'),
+        'sender_id'         => env('ZAVU_SENDER_ID'),
+        'whatsapp_template' => env('ZAVU_WHATSAPP_TEMPLATE', 'otp_verification'),
+        'from_email'        => env('ZAVU_FROM_EMAIL', 'no-reply@mivafid.com'),
+        'force_delivery'    => (bool) env('ZAVU_FORCE_DELIVERY', false),
+    ],
+
+    // Envoi OTP par SMS via Africa's Talking (repli alternatif)
     'africastalking' => [
         'username' => env('AFRICASTALKING_USERNAME'),
         'api_key' => env('AFRICASTALKING_API_KEY'),

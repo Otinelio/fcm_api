@@ -5,32 +5,32 @@ namespace App\Services\Otp;
 use App\Mail\OtpCodeMail;
 use App\Services\Otp\Channels\SmsOtpChannel;
 use App\Services\Otp\Channels\WhatsAppOtpChannel;
+use App\Services\Otp\Channels\ZavuEmailChannel;
+use App\Services\Otp\Channels\ZavuWhatsAppChannel;
 use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Throwable;
 
 /**
- * Point d'entrée unique pour l'envoi d'un code OTP — remplace les
- * `Log::info("Code OTP...")` de `ClientAuthController`/`RestaurantAuthController`.
+ * Point d'entrée unique pour l'envoi d'un code OTP.
  *
- * Email → Resend (`Mail::`, voir `config/mail.php`). Téléphone → WhatsApp en
- * priorité (`WhatsAppOtpChannel`), SMS en repli (`SmsOtpChannel`) si l'envoi
- * WhatsApp échoue pour n'importe quelle raison — pas de vérification
- * préalable "ce numéro a-t-il WhatsApp", voir la doc de `WhatsAppOtpChannel`.
- *
- * En environnement de test (`APP_ENV=testing`, toujours vrai sous
- * `php artisan test`) ou quand `APP_DEBUG` est actif, aucun appel réseau
- * réel n'est fait — le code reste visible via `debug_otp` dans la réponse
- * des contrôleurs. Développement local et suite de tests ne dépensent donc
- * jamais un SMS/WhatsApp réel, et n'ont besoin d'aucun `Http::fake()`.
+ * Pour les numéros de téléphone, envoi direct par SMS via Zavu.dev (SmsOtpChannel)
+ * avec repli sur Africa's Talking si besoin.
  */
 class OtpDeliveryService
 {
     public function __construct(
         private readonly WhatsAppOtpChannel $whatsapp,
         private readonly SmsOtpChannel $sms,
+        private readonly ?ZavuWhatsAppChannel $zavuWhatsapp = null,
+        private readonly ?ZavuEmailChannel $zavuEmail = null,
     ) {
+    }
+
+    private function zavuMail(): ZavuEmailChannel
+    {
+        return $this->zavuEmail ?? app(ZavuEmailChannel::class);
     }
 
     public function send(string $identifier, string $code): void
@@ -45,27 +45,35 @@ class OtpDeliveryService
             return;
         }
 
-        if ($this->whatsapp->send($identifier, $code)) {
-            return;
-        }
-
+        // Envoi SMS direct via Zavu.dev (avec fallback Africa's Talking)
         $this->sms->send($identifier, $code);
     }
 
-    /** `protected`, pas `private` : les tests le surchargent (sous-classe anonyme) pour exercer les envois réels sans dépendre de la détection d'environnement. */
+    /** `protected` : surchargé dans les tests unitaires ou contourné si ZAVU_FORCE_DELIVERY=true en dev local. */
     protected function shouldSkipRealDelivery(): bool
     {
-        return App::environment('testing') || (bool) config('app.debug');
+        if (App::environment('testing')) {
+            return true;
+        }
+
+        if (config('services.zavu.force_delivery')) {
+            return false;
+        }
+
+        return (bool) config('app.debug');
     }
 
     private function sendEmail(string $email, string $code): void
     {
+        // Tenter l'envoi Email via Zavu.dev
+        if ($this->zavuMail()->send($email, $code)) {
+            return;
+        }
+
+        // Repli sur Laravel Mail (Resend / SMTP)
         try {
             Mail::to($email)->send(new OtpCodeMail($code));
         } catch (Throwable $e) {
-            // Ne jamais faire échouer la requête HTTP à cause d'une panne du
-            // fournisseur mail : le code reste valide en cache le temps
-            // configuré, l'utilisateur peut redemander l'envoi.
             Log::error("OtpDeliveryService: échec envoi email OTP à {$email}.", [
                 'exception' => $e->getMessage(),
             ]);
