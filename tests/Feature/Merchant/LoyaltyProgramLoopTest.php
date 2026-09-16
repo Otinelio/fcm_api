@@ -6,6 +6,7 @@ use App\Models\Client;
 use App\Models\LoyaltyCard;
 use App\Models\LoyaltyProgram;
 use App\Models\LoyaltyProgramTier;
+use App\Models\LoyaltyReward;
 use App\Models\Restaurant;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -23,9 +24,9 @@ class LoyaltyProgramLoopTest extends TestCase
     private function restaurantWithToken(): array
     {
         $restaurant = Restaurant::create([
-            'name'     => 'Chez Awa',
+            'name' => 'Chez Awa',
             'category' => 'Restaurant',
-            'email'    => 'commerce@example.com',
+            'email' => 'commerce@example.com',
             'password' => bcrypt('password123'),
         ]);
         $token = $restaurant->createToken('merchant-app')->plainTextToken;
@@ -36,17 +37,17 @@ class LoyaltyProgramLoopTest extends TestCase
     private function cardFor(Restaurant $restaurant, LoyaltyProgram $program): LoyaltyCard
     {
         $client = Client::create([
-            'uuid'       => (string) Str::uuid(),
+            'uuid' => (string) Str::uuid(),
             'first_name' => 'Ada',
-            'phone'      => '+22890000001',
-            'password'   => bcrypt('secret123'),
+            'phone' => '+22890000001',
+            'password' => bcrypt('secret123'),
         ]);
 
         return LoyaltyCard::create([
-            'client_id'          => $client->id,
-            'restaurant_id'      => $restaurant->id,
+            'client_id' => $client->id,
+            'restaurant_id' => $restaurant->id,
             'loyalty_program_id' => $program->id,
-            'progress'           => ['stamps_current' => 0],
+            'progress' => ['stamps_current' => 0],
         ]);
     }
 
@@ -96,7 +97,7 @@ class LoyaltyProgramLoopTest extends TestCase
         // Cycle 1 complet -> reset immédiat, nouveau cycle démarré à 0.
         $this->assertNull($card->fresh()->completed_at);
         $this->assertSame(0, $card->fresh()->progress['stamps_current']);
-        $this->assertSame(2, \App\Models\LoyaltyReward::where('loyalty_card_id', $card->id)->count());
+        $this->assertSame(2, LoyaltyReward::where('loyalty_card_id', $card->id)->count());
 
         // Niveau ACTUEL du nouveau cycle : reparti à zéro — clé "bronze"
         // (premier palier), jamais le fallback "custom" de levelKey(null).
@@ -129,7 +130,7 @@ class LoyaltyProgramLoopTest extends TestCase
             ->postJson("/api/merchant/clients/{$card->id}/stamps")->assertOk();
 
         $this->assertSame(0, $card->fresh()->progress['stamps_current']);
-        $reward = \App\Models\LoyaltyReward::where('loyalty_card_id', $card->id)->first();
+        $reward = LoyaltyReward::where('loyalty_card_id', $card->id)->first();
         $this->assertNotNull($reward);
         $this->assertSame('available', $reward->status);
     }

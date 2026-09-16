@@ -352,4 +352,3 @@ class ReferralTest extends TestCase
         ]);
     }
 }
-

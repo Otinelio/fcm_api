@@ -6,6 +6,7 @@ use App\Models\Client;
 use App\Models\LoyaltyCard;
 use App\Models\LoyaltyProgram;
 use App\Models\LoyaltyProgramTier;
+use App\Models\LoyaltyReward;
 use App\Models\Restaurant;
 use App\Services\Loyalty\LoyaltyTierService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -299,7 +300,7 @@ class LoyaltyTierServiceTest extends TestCase
             'goal' => 20, 'level_name' => 'Niveau 2', 'reward_description' => 'Menu offert',
         ]);
         // Récompense déjà accordée pour le palier 1 lors du cycle précédent.
-        $reward = \App\Models\LoyaltyReward::create([
+        $reward = LoyaltyReward::create([
             'loyalty_card_id' => $card->id, 'restaurant_id' => $card->restaurant_id,
             'program_tier_id' => $tier1->id, 'title' => '1 café offert', 'unlocked_at' => now(),
         ]);

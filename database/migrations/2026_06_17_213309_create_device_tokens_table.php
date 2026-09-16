@@ -12,13 +12,13 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('device_tokens', function (Blueprint $table) {
-    $table->id();
-    $table->foreignId('user_id')->constrained()->cascadeOnDelete();
-    $table->string('token')->unique();
-    $table->enum('platform', ['android', 'ios'])->nullable();
-    $table->timestamp('last_used_at')->nullable();
-    $table->timestamps();
-});
+            $table->id();
+            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+            $table->string('token')->unique();
+            $table->enum('platform', ['android', 'ios'])->nullable();
+            $table->timestamp('last_used_at')->nullable();
+            $table->timestamps();
+        });
     }
 
     /**

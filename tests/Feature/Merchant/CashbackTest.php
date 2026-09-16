@@ -21,9 +21,9 @@ class CashbackTest extends TestCase
     private function restaurantWithToken(): array
     {
         $restaurant = Restaurant::create([
-            'name'     => 'Chez Awa',
+            'name' => 'Chez Awa',
             'category' => 'Restaurant',
-            'email'    => 'commerce@example.com',
+            'email' => 'commerce@example.com',
             'password' => bcrypt('password123'),
         ]);
         $token = $restaurant->createToken('merchant-app')->plainTextToken;
@@ -34,17 +34,17 @@ class CashbackTest extends TestCase
     private function cardFor(Restaurant $restaurant, LoyaltyProgram $program): LoyaltyCard
     {
         $client = Client::create([
-            'uuid'       => (string) Str::uuid(),
+            'uuid' => (string) Str::uuid(),
             'first_name' => 'Ada',
-            'phone'      => '+22890000001',
-            'password'   => bcrypt('secret123'),
+            'phone' => '+22890000001',
+            'password' => bcrypt('secret123'),
         ]);
 
         return LoyaltyCard::create([
-            'client_id'          => $client->id,
-            'restaurant_id'      => $restaurant->id,
+            'client_id' => $client->id,
+            'restaurant_id' => $restaurant->id,
             'loyalty_program_id' => $program->id,
-            'progress'           => ['stamps_current' => 0],
+            'progress' => ['stamps_current' => 0],
         ]);
     }
 
@@ -53,9 +53,9 @@ class CashbackTest extends TestCase
         [$restaurant, $token] = $this->restaurantWithToken();
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id,
-            'name'          => 'Programme',
-            'type'          => 'cashback',
-            'config'        => ['cashback_percentage' => 5],
+            'name' => 'Programme',
+            'type' => 'cashback',
+            'config' => ['cashback_percentage' => 5],
         ]);
         $card = $this->cardFor($restaurant, $program);
 
@@ -67,9 +67,9 @@ class CashbackTest extends TestCase
         $response->assertJsonPath('cashback_earned', 1000);
         $this->assertSame('1000.00', $card->fresh()->cashback_balance_fcfa);
         $this->assertDatabaseHas('loyalty_transactions', [
-            'loyalty_card_id'       => $card->id,
-            'type'                  => 'cashback_earn',
-            'value'                 => 1000,
+            'loyalty_card_id' => $card->id,
+            'type' => 'cashback_earn',
+            'value' => 1000,
             'montant_commande_fcfa' => 20000,
         ]);
         // Pas de cycle pour le cashback : aucun statut "reward_available".
@@ -81,9 +81,9 @@ class CashbackTest extends TestCase
         [$restaurant, $token] = $this->restaurantWithToken();
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id,
-            'name'          => 'Programme',
-            'type'          => 'cashback',
-            'config'        => ['cashback_percentage' => 5],
+            'name' => 'Programme',
+            'type' => 'cashback',
+            'config' => ['cashback_percentage' => 5],
         ]);
         $card = $this->cardFor($restaurant, $program);
         $card->update(['cashback_balance_fcfa' => 2000]);
@@ -100,9 +100,9 @@ class CashbackTest extends TestCase
         [$restaurant, $token] = $this->restaurantWithToken();
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id,
-            'name'          => 'Programme',
-            'type'          => 'cashback',
-            'config'        => ['cashback_percentage' => 5, 'cashback_redeem_threshold_fcfa' => 3000],
+            'name' => 'Programme',
+            'type' => 'cashback',
+            'config' => ['cashback_percentage' => 5, 'cashback_redeem_threshold_fcfa' => 3000],
         ]);
         $card = $this->cardFor($restaurant, $program);
         $card->update(['cashback_balance_fcfa' => 5000]);
@@ -110,16 +110,16 @@ class CashbackTest extends TestCase
         // Seuil 3 000 FCFA atteint (solde 5 000) -> utilisation autorisée.
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson("/api/merchant/clients/{$card->id}/redeem-cashback", [
-                'amount_fcfa'        => 10000,
+                'amount_fcfa' => 10000,
                 'redeem_amount_fcfa' => 2000,
             ]);
 
         $response->assertOk();
         $this->assertSame('3000.00', $card->fresh()->cashback_balance_fcfa);
         $this->assertDatabaseHas('loyalty_transactions', [
-            'loyalty_card_id'       => $card->id,
-            'type'                  => 'cashback_redeem',
-            'value'                 => 2000,
+            'loyalty_card_id' => $card->id,
+            'type' => 'cashback_redeem',
+            'value' => 2000,
             'montant_commande_fcfa' => 10000,
         ]);
     }
@@ -129,9 +129,9 @@ class CashbackTest extends TestCase
         [$restaurant, $token] = $this->restaurantWithToken();
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id,
-            'name'          => 'Programme',
-            'type'          => 'cashback',
-            'config'        => ['cashback_percentage' => 5, 'cashback_redeem_threshold_fcfa' => 20000],
+            'name' => 'Programme',
+            'type' => 'cashback',
+            'config' => ['cashback_percentage' => 5, 'cashback_redeem_threshold_fcfa' => 20000],
         ]);
         $card = $this->cardFor($restaurant, $program);
         $card->update(['cashback_balance_fcfa' => 10000]);
@@ -139,7 +139,7 @@ class CashbackTest extends TestCase
         // Seuil 20 000 FCFA non atteint (solde 10 000) -> utilisation refusée.
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson("/api/merchant/clients/{$card->id}/redeem-cashback", [
-                'amount_fcfa'        => 10000,
+                'amount_fcfa' => 10000,
                 'redeem_amount_fcfa' => 6000,
             ]);
 
@@ -152,16 +152,16 @@ class CashbackTest extends TestCase
         [$restaurant, $token] = $this->restaurantWithToken();
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id,
-            'name'          => 'Programme',
-            'type'          => 'cashback',
-            'config'        => ['cashback_percentage' => 5],
+            'name' => 'Programme',
+            'type' => 'cashback',
+            'config' => ['cashback_percentage' => 5],
         ]);
         $card = $this->cardFor($restaurant, $program);
         $card->update(['cashback_balance_fcfa' => 1000]);
 
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson("/api/merchant/clients/{$card->id}/redeem-cashback", [
-                'amount_fcfa'        => 10000,
+                'amount_fcfa' => 10000,
                 'redeem_amount_fcfa' => 1500,
             ]);
 
@@ -174,9 +174,9 @@ class CashbackTest extends TestCase
         [$restaurant, $token] = $this->restaurantWithToken();
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id,
-            'name'          => 'Programme',
-            'type'          => 'cashback',
-            'config'        => ['cashback_percentage' => 5],
+            'name' => 'Programme',
+            'type' => 'cashback',
+            'config' => ['cashback_percentage' => 5],
         ]);
         $card = $this->cardFor($restaurant, $program);
         $card->update(['cashback_balance_fcfa' => 5000]);
@@ -185,7 +185,7 @@ class CashbackTest extends TestCase
         // absolue : achat 1 000, cashback demandé 1 500, solde suffisant.
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson("/api/merchant/clients/{$card->id}/redeem-cashback", [
-                'amount_fcfa'        => 1000,
+                'amount_fcfa' => 1000,
                 'redeem_amount_fcfa' => 1500,
             ]);
 
@@ -199,16 +199,16 @@ class CashbackTest extends TestCase
         [$restaurant, $token] = $this->restaurantWithToken();
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id,
-            'name'          => 'Programme',
-            'type'          => 'cashback',
-            'config'        => ['cashback_percentage' => 5],
+            'name' => 'Programme',
+            'type' => 'cashback',
+            'config' => ['cashback_percentage' => 5],
         ]);
         $card = $this->cardFor($restaurant, $program);
         $card->update(['cashback_balance_fcfa' => 9000]);
 
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson("/api/merchant/clients/{$card->id}/redeem-cashback", [
-                'amount_fcfa'        => 10000,
+                'amount_fcfa' => 10000,
                 'redeem_amount_fcfa' => 9000,
             ]);
 

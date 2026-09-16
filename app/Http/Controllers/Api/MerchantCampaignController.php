@@ -4,6 +4,9 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\SendCampaignNotification;
+use App\Models\Client;
+use App\Models\LoyaltyCard;
+use App\Models\Notification;
 use App\Models\NotificationCampaign;
 use App\Models\Restaurant;
 use App\Services\Campaigns\CampaignRecipientResolver;
@@ -23,9 +26,7 @@ use Illuminate\Http\Request;
  */
 class MerchantCampaignController extends Controller
 {
-    public function __construct(private readonly CampaignThrottle $throttle)
-    {
-    }
+    public function __construct(private readonly CampaignThrottle $throttle) {}
 
     /**
      * GET /api/merchant/campaigns
@@ -44,9 +45,9 @@ class MerchantCampaignController extends Controller
         }
 
         $campaigns = $query->withCount([
-                'logs as delivered_count' => fn ($q) => $q->where('status', 'sent'),
-                'logs as failed_count' => fn ($q) => $q->where('status', 'failed'),
-            ])
+            'logs as delivered_count' => fn ($q) => $q->where('status', 'sent'),
+            'logs as failed_count' => fn ($q) => $q->where('status', 'failed'),
+        ])
             ->orderByDesc('created_at')
             ->get()
             ->map(fn (NotificationCampaign $campaign) => $this->campaignData($campaign))
@@ -79,7 +80,7 @@ class MerchantCampaignController extends Controller
 
         $recipients = $logs->map(fn ($log) => [
             'client_id' => $log->client_id,
-            'name' => trim(($log->client->first_name ?? '') . ' ' . ($log->client->last_name ?? '')),
+            'name' => trim(($log->client->first_name ?? '').' '.($log->client->last_name ?? '')),
             'phone' => $log->client->phone ?? null,
             'status' => $log->status, // 'sent' | 'failed'
             'failure_reason' => $log->failure_reason,
@@ -91,8 +92,8 @@ class MerchantCampaignController extends Controller
         $targetClientIds = $campaign->target['recipient_client_ids'] ?? [];
         $pendingIds = array_diff($targetClientIds, $loggedClientIds);
 
-        if (!empty($pendingIds)) {
-            $pendingClients = \App\Models\Client::whereIn('id', $pendingIds)
+        if (! empty($pendingIds)) {
+            $pendingClients = Client::whereIn('id', $pendingIds)
                 ->select('id', 'first_name', 'last_name', 'phone')
                 ->get();
             foreach ($pendingClients as $client) {
@@ -127,21 +128,21 @@ class MerchantCampaignController extends Controller
         $restaurant = $request->user();
 
         $data = $request->validate([
-            'type'           => ['required', 'string', 'max:50'],
-            'title'          => ['nullable', 'string', 'max:120'],
-            'message'        => ['nullable', 'string', 'max:500'],
-            'image_url'      => ['nullable', 'string', 'max:500'],
-            'image'          => ['nullable', 'image', 'max:5120'],
+            'type' => ['required', 'string', 'max:50'],
+            'title' => ['nullable', 'string', 'max:120'],
+            'message' => ['nullable', 'string', 'max:500'],
+            'image_url' => ['nullable', 'string', 'max:500'],
+            'image' => ['nullable', 'image', 'max:5120'],
             'recipient_type' => ['required', 'string', 'max:50'],
-            'client_ids'     => ['required', 'array', 'min:1'],
-            'client_ids.*'   => ['integer'],
-            'scheduled_at'   => ['nullable', 'date'],
+            'client_ids' => ['required', 'array', 'min:1'],
+            'client_ids.*' => ['integer'],
+            'scheduled_at' => ['nullable', 'date'],
         ]);
 
         $imageUrl = $data['image_url'] ?? null;
         if ($request->hasFile('image')) {
             $path = $request->file('image')->store('campaigns', 'public');
-            $imageUrl = config('app.url') . '/storage/' . $path;
+            $imageUrl = config('app.url').'/storage/'.$path;
         }
 
         // Les destinataires viennent de l'écran "Destinataires" (segment +
@@ -149,14 +150,14 @@ class MerchantCampaignController extends Controller
         // côté serveur seul. On les rescope quand même au commerce
         // authentifié — un id hors périmètre ne doit ni compter dans le
         // crédit débité, ni recevoir de SMS.
-        $clientIds = \App\Models\LoyaltyCard::where('restaurant_id', $restaurant->id)
+        $clientIds = LoyaltyCard::where('restaurant_id', $restaurant->id)
             ->whereIn('client_id', $data['client_ids'])
             ->pluck('client_id')
             ->unique()
             ->values();
 
         if ($data['type'] === 'reward') {
-            $clientIds = \App\Models\LoyaltyCard::where('restaurant_id', $restaurant->id)
+            $clientIds = LoyaltyCard::where('restaurant_id', $restaurant->id)
                 ->whereIn('client_id', $clientIds)
                 ->where('status', 'reward_available')
                 ->pluck('client_id')
@@ -200,19 +201,19 @@ class MerchantCampaignController extends Controller
 
         $campaign = NotificationCampaign::create([
             'restaurant_id' => $restaurant->id,
-            'type'          => $data['type'],
-            'title'         => $data['title'] ?? null,
-            'message'       => $data['message'] ?? null,
-            'image_url'     => $imageUrl,
-            'kind'          => 'manual',
-            'target'        => [
-                'recipient_type'      => $data['recipient_type'],
-                'recipients_count'    => $recipients,
+            'type' => $data['type'],
+            'title' => $data['title'] ?? null,
+            'message' => $data['message'] ?? null,
+            'image_url' => $imageUrl,
+            'kind' => 'manual',
+            'target' => [
+                'recipient_type' => $data['recipient_type'],
+                'recipients_count' => $recipients,
                 'recipient_client_ids' => $clientIds->all(),
             ],
-            'scheduled_at'  => $scheduledAt,
-            'sent_at'       => $sendNow ? now() : null,
-            'status'        => $sendNow ? 'sent' : 'scheduled',
+            'scheduled_at' => $scheduledAt,
+            'sent_at' => $sendNow ? now() : null,
+            'status' => $sendNow ? 'sent' : 'scheduled',
         ]);
 
         if ($sendNow) {
@@ -222,7 +223,7 @@ class MerchantCampaignController extends Controller
         }
 
         return response()->json([
-            'message'  => $sendNow ? 'Campagne envoyée.' : 'Campagne programmée.',
+            'message' => $sendNow ? 'Campagne envoyée.' : 'Campagne programmée.',
             'campaign' => $this->campaignData($campaign),
         ], 201);
     }
@@ -261,7 +262,7 @@ class MerchantCampaignController extends Controller
 
         $clientIds = app(CampaignRecipientResolver::class)->resolve($restaurant, $type);
 
-        $query = \App\Models\LoyaltyCard::query()
+        $query = LoyaltyCard::query()
             ->with('client')
             ->where('restaurant_id', $restaurant->id)
             ->whereIn('client_id', $clientIds);
@@ -302,28 +303,28 @@ class MerchantCampaignController extends Controller
         $restaurant = $request->user();
 
         $data = $request->validate([
-            'id'             => ['nullable', 'integer'],
-            'type'           => ['required', 'string', 'max:50'],
-            'title'          => ['nullable', 'string', 'max:120'],
-            'message'        => ['nullable', 'string', 'max:500'],
-            'image_url'      => ['nullable', 'string', 'max:500'],
-            'image'          => ['nullable', 'image', 'max:5120'],
+            'id' => ['nullable', 'integer'],
+            'type' => ['required', 'string', 'max:50'],
+            'title' => ['nullable', 'string', 'max:120'],
+            'message' => ['nullable', 'string', 'max:500'],
+            'image_url' => ['nullable', 'string', 'max:500'],
+            'image' => ['nullable', 'image', 'max:5120'],
             'recipient_type' => ['nullable', 'string', 'max:50'],
-            'client_ids'     => ['nullable', 'array'],
-            'client_ids.*'   => ['integer'],
-            'scheduled_at'   => ['nullable', 'date'],
-            'draft_step'     => ['nullable', 'integer', 'min:1', 'max:4'],
+            'client_ids' => ['nullable', 'array'],
+            'client_ids.*' => ['integer'],
+            'scheduled_at' => ['nullable', 'date'],
+            'draft_step' => ['nullable', 'integer', 'min:1', 'max:4'],
         ]);
 
         $imageUrl = $data['image_url'] ?? null;
         if ($request->hasFile('image')) {
             $path = $request->file('image')->store('campaigns', 'public');
-            $imageUrl = config('app.url') . '/storage/' . $path;
+            $imageUrl = config('app.url').'/storage/'.$path;
         }
 
         $clientIds = $data['client_ids'] ?? [];
-        if (!empty($clientIds)) {
-            $clientIds = \App\Models\LoyaltyCard::where('restaurant_id', $restaurant->id)
+        if (! empty($clientIds)) {
+            $clientIds = LoyaltyCard::where('restaurant_id', $restaurant->id)
                 ->whereIn('client_id', $clientIds)
                 ->pluck('client_id')
                 ->unique()
@@ -332,7 +333,7 @@ class MerchantCampaignController extends Controller
         }
 
         $campaign = null;
-        if (!empty($data['id'])) {
+        if (! empty($data['id'])) {
             $campaign = NotificationCampaign::where('id', $data['id'])
                 ->where('restaurant_id', $restaurant->id)
                 ->first();
@@ -391,31 +392,31 @@ class MerchantCampaignController extends Controller
         }
 
         $data = $request->validate([
-            'type'           => ['required', 'string', 'max:50'],
-            'title'          => ['nullable', 'string', 'max:120'],
-            'message'        => ['nullable', 'string', 'max:500'],
-            'image_url'      => ['nullable', 'string', 'max:500'],
-            'image'          => ['nullable', 'image', 'max:5120'],
+            'type' => ['required', 'string', 'max:50'],
+            'title' => ['nullable', 'string', 'max:120'],
+            'message' => ['nullable', 'string', 'max:500'],
+            'image_url' => ['nullable', 'string', 'max:500'],
+            'image' => ['nullable', 'image', 'max:5120'],
             'recipient_type' => ['required', 'string', 'max:50'],
-            'client_ids'     => ['required', 'array', 'min:1'],
-            'client_ids.*'   => ['integer'],
-            'scheduled_at'   => ['nullable', 'date'],
+            'client_ids' => ['required', 'array', 'min:1'],
+            'client_ids.*' => ['integer'],
+            'scheduled_at' => ['nullable', 'date'],
         ]);
 
         $imageUrl = $data['image_url'] ?? null;
         if ($request->hasFile('image')) {
             $path = $request->file('image')->store('campaigns', 'public');
-            $imageUrl = config('app.url') . '/storage/' . $path;
+            $imageUrl = config('app.url').'/storage/'.$path;
         }
 
-        $clientIds = \App\Models\LoyaltyCard::where('restaurant_id', $restaurant->id)
+        $clientIds = LoyaltyCard::where('restaurant_id', $restaurant->id)
             ->whereIn('client_id', $data['client_ids'])
             ->pluck('client_id')
             ->unique()
             ->values();
 
         if ($data['type'] === 'reward') {
-            $clientIds = \App\Models\LoyaltyCard::where('restaurant_id', $restaurant->id)
+            $clientIds = LoyaltyCard::where('restaurant_id', $restaurant->id)
                 ->whereIn('client_id', $clientIds)
                 ->where('status', 'reward_available')
                 ->pluck('client_id')
@@ -451,9 +452,10 @@ class MerchantCampaignController extends Controller
                 ?? ($this->throttle->isWithinSendWindow() ? null : $this->throttle->nextWindowStart());
             $newStatus = $sendNow ? 'sent' : 'scheduled';
             $sentAt = $sendNow ? now() : null;
-            
+
             if ($sendNow && $recipients > $this->throttle->remainingToday($restaurant)) {
                 $cap = CampaignThrottle::DAILY_RECIPIENT_CAP;
+
                 return response()->json([
                     'message' => "Plafond quotidien de {$cap} destinataires atteint pour aujourd'hui — réessayez demain ou programmez l'envoi.",
                 ], 422);
@@ -523,24 +525,24 @@ class MerchantCampaignController extends Controller
         $target = $campaign->target ?? [];
 
         return [
-            'id'               => (string) $campaign->id,
-            'type'             => $campaign->type,
-            'title'            => $campaign->title,
-            'message'          => $campaign->message,
-            'image_url'        => $campaign->image_url,
-            'recipient_type'   => $target['recipient_type'] ?? 'all',
-            'recipient_ids'    => $target['recipient_client_ids'] ?? [],
+            'id' => (string) $campaign->id,
+            'type' => $campaign->type,
+            'title' => $campaign->title,
+            'message' => $campaign->message,
+            'image_url' => $campaign->image_url,
+            'recipient_type' => $target['recipient_type'] ?? 'all',
+            'recipient_ids' => $target['recipient_client_ids'] ?? [],
             'recipients_count' => (int) ($target['recipients_count'] ?? 0),
-            'status'           => $campaign->status,
-            'scheduled_at'     => $campaign->scheduled_at,
-            'sent_at'          => $campaign->sent_at,
-            'created_at'       => $campaign->created_at,
-            'draft_step'       => (int) ($target['draft_step'] ?? 1),
+            'status' => $campaign->status,
+            'scheduled_at' => $campaign->scheduled_at,
+            'sent_at' => $campaign->sent_at,
+            'created_at' => $campaign->created_at,
+            'draft_step' => (int) ($target['draft_step'] ?? 1),
             // Absents (pas de `withCount`) juste après `store()` : les jobs
             // d'envoi n'ont pas encore tourné, 0/0 est donc exact à cet
             // instant — seul `index()` les charge réellement via `logs()`.
-            'delivered_count'  => $campaign->delivered_count ?? 0,
-            'failed_count'     => $campaign->failed_count ?? 0,
+            'delivered_count' => $campaign->delivered_count ?? 0,
+            'failed_count' => $campaign->failed_count ?? 0,
         ];
     }
 
@@ -558,13 +560,13 @@ class MerchantCampaignController extends Controller
                 'Votre crédit de notifications est épuisé. Rechargez pour continuer à envoyer des campagnes.',
             );
         } elseif ($credits <= 10) {
-            $alreadyNotified = \App\Models\Notification::where('notifiable_type', $restaurant->getMorphClass())
+            $alreadyNotified = Notification::where('notifiable_type', $restaurant->getMorphClass())
                 ->where('notifiable_id', $restaurant->getKey())
                 ->where('type', 'merchant_sms_low')
                 ->where('created_at', '>=', now()->subDay())
                 ->exists();
 
-            if (!$alreadyNotified) {
+            if (! $alreadyNotified) {
                 $dispatcher->send(
                     $restaurant,
                     'merchant_sms_low',

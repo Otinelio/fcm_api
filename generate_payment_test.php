@@ -3,13 +3,14 @@
 require __DIR__.'/vendor/autoload.php';
 
 $app = require_once __DIR__.'/bootstrap/app.php';
-$kernel = $app->make(Illuminate\Contracts\Console\Kernel::class);
+$kernel = $app->make(Kernel::class);
 $kernel->bootstrap();
 
-use App\Models\User;
-use App\Models\SubscriptionPlan;
-use Illuminate\Http\Request;
 use App\Http\Controllers\PaymentController;
+use App\Models\SubscriptionPlan;
+use App\Models\User;
+use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Http\Request;
 
 // On crée/récupère un utilisateur de test et un plan de test
 $user = User::firstOrCreate(
@@ -29,10 +30,10 @@ $request->setUserResolver(function () use ($user) {
 });
 
 // On appelle le contrôleur
-$controller = new PaymentController();
+$controller = new PaymentController;
 $response = $controller->initSubscriptionPayment($request, $plan);
 
 echo "\n========================================\n";
 echo "🔗 LIEN DE PAIEMENT GÉNÉRÉ :\n";
-echo json_decode($response->getContent())->payment_url . "\n";
+echo json_decode($response->getContent())->payment_url."\n";
 echo "========================================\n\n";

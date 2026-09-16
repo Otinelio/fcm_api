@@ -2,9 +2,11 @@
 
 namespace App\Console\Commands;
 
+use App\Events\CampaignUpdated;
 use App\Jobs\SendCampaignNotification;
 use App\Models\NotificationCampaign;
 use App\Services\Campaigns\CampaignThrottle;
+use App\Services\NotificationDispatcher;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -38,6 +40,7 @@ class DispatchScheduledCampaigns extends Command
                 // due dans la minute et re-dépasserait le plafond en boucle.
                 $campaign->update(['scheduled_at' => $throttle->nextWindowStart()]);
                 $deferred++;
+
                 continue;
             }
 
@@ -46,10 +49,10 @@ class DispatchScheduledCampaigns extends Command
             }
 
             $campaign->update(['status' => 'sent', 'sent_at' => now()]);
-            event(new \App\Events\CampaignUpdated($campaign));
+            event(new CampaignUpdated($campaign));
 
             if ($restaurant) {
-                app(\App\Services\NotificationDispatcher::class)->send(
+                app(NotificationDispatcher::class)->send(
                     $restaurant,
                     'merchant_campaign_sent',
                     'Campagne envoyée 📨',

@@ -2,11 +2,11 @@
 
 namespace App\Http\Requests\Auth;
 
+use App\Services\Phone\PhoneParser;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Str;
-use App\Services\Phone\PhoneParser;
+use Illuminate\Validation\ValidationException;
 
 class LoginRequest extends FormRequest
 {
@@ -29,7 +29,7 @@ class LoginRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'phone'    => ['required', 'string', 'phone:AUTO,INTERNATIONAL'],
+            'phone' => ['required', 'string', 'phone:AUTO,INTERNATIONAL'],
             'password' => ['required', 'string'],
         ];
     }
@@ -37,8 +37,8 @@ class LoginRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'phone.required'    => 'Le numéro de téléphone est obligatoire.',
-            'phone.phone'       => 'Le numéro de téléphone n\'est pas valide.',
+            'phone.required' => 'Le numéro de téléphone est obligatoire.',
+            'phone.phone' => 'Le numéro de téléphone n\'est pas valide.',
             'password.required' => 'Le mot de passe est obligatoire.',
         ];
     }
@@ -86,6 +86,6 @@ class LoginRequest extends FormRequest
      */
     private function throttleKey(): string
     {
-        return Str::lower($this->input('phone')) . '|' . $this->ip();
+        return Str::lower($this->input('phone')).'|'.$this->ip();
     }
 }

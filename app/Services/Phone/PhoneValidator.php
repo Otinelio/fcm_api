@@ -2,8 +2,6 @@
 
 namespace App\Services\Phone;
 
-use App\Services\Phone\PhoneParser;
-
 class PhoneValidator
 {
     protected PhoneParser $parser;
@@ -19,8 +17,8 @@ class PhoneValidator
     public function isValid(string $phoneNumber, ?string $defaultCountry = null): bool
     {
         $parsed = $this->parser->parse($phoneNumber, $defaultCountry);
-        
-        if (!$parsed) {
+
+        if (! $parsed) {
             return false;
         }
 

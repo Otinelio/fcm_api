@@ -1,20 +1,26 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
 use App\Events\TestEvent;
 use App\Http\Controllers\DebugQrController;
+use App\Models\User;
+use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
     return view('welcome');
 });
 
+Route::redirect('/login', '/admin/login')->name('login');
+
 Route::get('/test', function () {
     TestEvent::dispatch();
+
     return 'Événement envoyé !';
 });
 
-Route::get('/admin', function () {
-    $users = \App\Models\User::all();
+// Route héritée /admin supprimée au profit du panneau Filament v3 SuperAdmin (/admin)
+Route::get('/legacy-admin', function () {
+    $users = User::all();
+
     return view('admin', compact('users'));
 });
 

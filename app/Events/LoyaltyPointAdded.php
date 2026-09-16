@@ -3,6 +3,7 @@
 namespace App\Events;
 
 use App\Models\User;
+use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
@@ -12,15 +13,13 @@ class LoyaltyPointAdded implements ShouldBroadcast
 {
     use Dispatchable, SerializesModels;
 
-    public function __construct(public User $customer)
-    {
-    }
+    public function __construct(public User $customer) {}
 
     public function broadcastOn(): array
     {
         return [
-            new PrivateChannel('loyalty.' . $this->customer->id),
-            new \Illuminate\Broadcasting\Channel('loyalty.' . $this->customer->id),
+            new PrivateChannel('loyalty.'.$this->customer->id),
+            new Channel('loyalty.'.$this->customer->id),
         ];
     }
 

@@ -5,6 +5,7 @@ namespace Tests\Feature\Auth;
 use App\Models\Client;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -15,23 +16,23 @@ class AuthMethodEnforcementTest extends TestCase
     private function makeClassicClient(array $overrides = []): Client
     {
         return Client::create(array_merge([
-            'uuid'       => (string) Str::uuid(),
+            'uuid' => (string) Str::uuid(),
             'first_name' => 'Ada',
-            'phone'      => '+22890000001',
-            'password'   => bcrypt('secret123'),
+            'phone' => '+22890000001',
+            'password' => bcrypt('secret123'),
         ], $overrides));
     }
 
     private function makeGoogleClient(array $overrides = []): Client
     {
         return Client::create(array_merge([
-            'uuid'           => (string) Str::uuid(),
-            'first_name'     => 'Kofi',
-            'email'          => 'kofi@example.com',
-            'phone'          => '+22890000002',
-            'password'       => null,
+            'uuid' => (string) Str::uuid(),
+            'first_name' => 'Kofi',
+            'email' => 'kofi@example.com',
+            'phone' => '+22890000002',
+            'password' => null,
             'oauth_provider' => 'google',
-            'oauth_id'       => 'google-uid-1',
+            'oauth_id' => 'google-uid-1',
         ], $overrides));
     }
 
@@ -40,7 +41,7 @@ class AuthMethodEnforcementTest extends TestCase
         $client = $this->makeGoogleClient();
 
         $response = $this->postJson('/api/auth/login', [
-            'phone'    => $client->phone,
+            'phone' => $client->phone,
             'password' => 'whatever123',
         ]);
 
@@ -55,7 +56,7 @@ class AuthMethodEnforcementTest extends TestCase
         $client = $this->makeClassicClient();
 
         $response = $this->postJson('/api/auth/login', [
-            'phone'    => $client->phone,
+            'phone' => $client->phone,
             'password' => 'secret123',
         ]);
 
@@ -75,7 +76,7 @@ class AuthMethodEnforcementTest extends TestCase
         $response->assertJson([
             'message' => 'Ce compte utilise une connexion Google. Connectez-vous avec Google pour accéder à votre compte.',
         ]);
-        $this->assertNull(Cache::get('otp_reset_' . $client->phone));
+        $this->assertNull(Cache::get('otp_reset_'.$client->phone));
     }
 
     public function test_forgot_password_still_works_for_classic_account(): void
@@ -87,18 +88,18 @@ class AuthMethodEnforcementTest extends TestCase
         ]);
 
         $response->assertOk();
-        $this->assertNotNull(Cache::get('otp_reset_' . $client->phone));
+        $this->assertNotNull(Cache::get('otp_reset_'.$client->phone));
     }
 
     public function test_reset_password_rejects_google_account_even_with_a_valid_token(): void
     {
         $client = $this->makeGoogleClient(['email' => 'kofi3@example.com', 'phone' => '+22890000005']);
-        Cache::put('reset_token_' . $client->phone, 'forged-token', now()->addMinutes(15));
+        Cache::put('reset_token_'.$client->phone, 'forged-token', now()->addMinutes(15));
 
         $response = $this->postJson('/api/auth/reset-password', [
-            'phone'                 => $client->phone,
-            'reset_token'           => 'forged-token',
-            'password'              => 'newpassword123',
+            'phone' => $client->phone,
+            'reset_token' => 'forged-token',
+            'password' => 'newpassword123',
             'password_confirmation' => 'newpassword123',
         ]);
 
@@ -109,16 +110,16 @@ class AuthMethodEnforcementTest extends TestCase
     public function test_reset_password_still_works_for_classic_account(): void
     {
         $client = $this->makeClassicClient(['phone' => '+22890000006']);
-        Cache::put('reset_token_' . $client->phone, 'real-token', now()->addMinutes(15));
+        Cache::put('reset_token_'.$client->phone, 'real-token', now()->addMinutes(15));
 
         $response = $this->postJson('/api/auth/reset-password', [
-            'phone'                 => $client->phone,
-            'reset_token'           => 'real-token',
-            'password'              => 'newpassword123',
+            'phone' => $client->phone,
+            'reset_token' => 'real-token',
+            'password' => 'newpassword123',
             'password_confirmation' => 'newpassword123',
         ]);
 
         $response->assertOk();
-        $this->assertTrue(\Illuminate\Support\Facades\Hash::check('newpassword123', $client->fresh()->password));
+        $this->assertTrue(Hash::check('newpassword123', $client->fresh()->password));
     }
 }

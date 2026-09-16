@@ -5,7 +5,6 @@ namespace Tests\Feature\Auth;
 use App\Models\Client;
 use App\Services\Auth\SocialAuthService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -21,10 +20,10 @@ class AuditScenariosTest extends TestCase
     private function classicClient(array $overrides = []): Client
     {
         return Client::create(array_merge([
-            'uuid'       => (string) Str::uuid(),
+            'uuid' => (string) Str::uuid(),
             'first_name' => 'Ada',
-            'phone'      => '+22891000001',
-            'password'   => bcrypt('secret123'),
+            'phone' => '+22891000001',
+            'password' => bcrypt('secret123'),
         ], $overrides));
     }
 
@@ -33,18 +32,18 @@ class AuditScenariosTest extends TestCase
     public function test_register_rejects_a_phone_already_used_by_a_google_account(): void
     {
         Client::create([
-            'uuid'           => (string) Str::uuid(),
-            'first_name'     => 'Kofi',
-            'email'          => 'kofi@example.com',
-            'phone'          => '+22891000002',
+            'uuid' => (string) Str::uuid(),
+            'first_name' => 'Kofi',
+            'email' => 'kofi@example.com',
+            'phone' => '+22891000002',
             'oauth_provider' => 'google',
-            'oauth_id'       => 'g-1',
+            'oauth_id' => 'g-1',
         ]);
 
         $response = $this->postJson('/api/auth/register', [
-            'first_name'            => 'Someone',
-            'phone'                 => '+22891000002',
-            'password'              => 'password123',
+            'first_name' => 'Someone',
+            'phone' => '+22891000002',
+            'password' => 'password123',
             'password_confirmation' => 'password123',
         ]);
 
@@ -55,11 +54,11 @@ class AuditScenariosTest extends TestCase
     public function test_updating_profile_email_rejects_an_email_already_used_by_a_google_account(): void
     {
         Client::create([
-            'uuid'           => (string) Str::uuid(),
-            'first_name'     => 'Kofi',
-            'email'          => 'taken@example.com',
+            'uuid' => (string) Str::uuid(),
+            'first_name' => 'Kofi',
+            'email' => 'taken@example.com',
             'oauth_provider' => 'google',
-            'oauth_id'       => 'g-2',
+            'oauth_id' => 'g-2',
         ]);
         $client = $this->classicClient(['phone' => '+22891000003']);
         $token = $client->createToken('t')->plainTextToken;
@@ -84,7 +83,7 @@ class AuditScenariosTest extends TestCase
         $response = $this->postJson('/api/auth/social', [
             'provider' => 'google',
             'id_token' => 'fake',
-            'action'   => 'login',
+            'action' => 'login',
         ]);
 
         $response->assertStatus(403);
@@ -96,11 +95,11 @@ class AuditScenariosTest extends TestCase
     public function test_social_login_with_action_login_and_existing_google_account_succeeds(): void
     {
         Client::create([
-            'uuid'           => (string) Str::uuid(),
-            'first_name'     => 'Kofi',
-            'email'          => 'kofi3@example.com',
+            'uuid' => (string) Str::uuid(),
+            'first_name' => 'Kofi',
+            'email' => 'kofi3@example.com',
             'oauth_provider' => 'google',
-            'oauth_id'       => 'g-3',
+            'oauth_id' => 'g-3',
         ]);
 
         $this->partialMock(SocialAuthService::class, function ($mock) {
@@ -112,7 +111,7 @@ class AuditScenariosTest extends TestCase
         $response = $this->postJson('/api/auth/social', [
             'provider' => 'google',
             'id_token' => 'fake',
-            'action'   => 'login',
+            'action' => 'login',
         ]);
 
         $response->assertOk();
@@ -126,7 +125,7 @@ class AuditScenariosTest extends TestCase
         $client = $this->classicClient(['phone' => '+22891000004']);
 
         $response = $this->postJson('/api/auth/login', [
-            'phone'    => $client->phone,
+            'phone' => $client->phone,
             'password' => 'wrong-password',
         ]);
 
@@ -137,7 +136,7 @@ class AuditScenariosTest extends TestCase
     public function test_login_with_unknown_phone_gives_a_clear_message(): void
     {
         $response = $this->postJson('/api/auth/login', [
-            'phone'    => '+22899999999',
+            'phone' => '+22899999999',
             'password' => 'whatever123',
         ]);
 
@@ -169,8 +168,8 @@ class AuditScenariosTest extends TestCase
 
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->putJson('/api/auth/change-password', [
-                'current_password'      => 'wrong',
-                'password'              => 'newpassword123',
+                'current_password' => 'wrong',
+                'password' => 'newpassword123',
                 'password_confirmation' => 'newpassword123',
             ]);
 
@@ -186,8 +185,8 @@ class AuditScenariosTest extends TestCase
 
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->putJson('/api/auth/change-password', [
-                'current_password'      => 'oldpass123',
-                'password'              => 'newpass456',
+                'current_password' => 'oldpass123',
+                'password' => 'newpass456',
                 'password_confirmation' => 'newpass456',
             ]);
 
@@ -237,7 +236,7 @@ class AuditScenariosTest extends TestCase
         $response = $this->postJson('/api/auth/social', [
             'provider' => 'google',
             'id_token' => 'fake',
-            'action'   => 'signup',
+            'action' => 'signup',
         ]);
 
         $response->assertStatus(201);
@@ -251,9 +250,9 @@ class AuditScenariosTest extends TestCase
         $client = $this->classicClient(['phone' => '+22891000009']);
 
         $response = $this->postJson('/api/auth/reset-password', [
-            'phone'                 => $client->phone,
-            'reset_token'           => 'never-issued',
-            'password'              => 'newpassword123',
+            'phone' => $client->phone,
+            'reset_token' => 'never-issued',
+            'password' => 'newpassword123',
             'password_confirmation' => 'newpassword123',
         ]);
 
@@ -269,17 +268,17 @@ class AuditScenariosTest extends TestCase
     {
         for ($i = 0; $i < 5; $i++) {
             $this->postJson('/api/auth/register', [
-                'first_name'            => 'Spammer',
-                'phone'                 => '+2289100001' . $i,
-                'password'              => 'password123',
+                'first_name' => 'Spammer',
+                'phone' => '+2289100001'.$i,
+                'password' => 'password123',
                 'password_confirmation' => 'password123',
             ]);
         }
 
         $response = $this->postJson('/api/auth/register', [
-            'first_name'            => 'Spammer',
-            'phone'                 => '+22891000019',
-            'password'              => 'password123',
+            'first_name' => 'Spammer',
+            'phone' => '+22891000019',
+            'password' => 'password123',
             'password_confirmation' => 'password123',
         ]);
 
@@ -295,8 +294,8 @@ class AuditScenariosTest extends TestCase
 
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->putJson('/api/auth/change-password', [
-                'current_password'      => 'samepass123',
-                'password'              => 'samepass123',
+                'current_password' => 'samepass123',
+                'password' => 'samepass123',
                 'password_confirmation' => 'samepass123',
             ]);
 
@@ -314,8 +313,8 @@ class AuditScenariosTest extends TestCase
     {
         $response = $this->postJson('/api/auth/validate-register-step1', [
             'first_name' => 'Nouveau',
-            'phone'      => '+22891000030',
-            'birthdate'  => '2000-01-01',
+            'phone' => '+22891000030',
+            'birthdate' => '2000-01-01',
         ]);
 
         $response->assertOk();
@@ -325,11 +324,11 @@ class AuditScenariosTest extends TestCase
     public function test_register_creates_the_client_and_returns_a_usable_token(): void
     {
         $response = $this->postJson('/api/auth/register', [
-            'first_name'            => 'Nouveau',
-            'phone'                 => '+22891000031',
-            'password'              => 'password123',
+            'first_name' => 'Nouveau',
+            'phone' => '+22891000031',
+            'password' => 'password123',
             'password_confirmation' => 'password123',
-            'birthdate'             => '2000-01-01',
+            'birthdate' => '2000-01-01',
         ]);
 
         $response->assertCreated();
@@ -340,7 +339,7 @@ class AuditScenariosTest extends TestCase
         ]);
 
         $this->assertDatabaseHas('clients', [
-            'phone'      => '+22891000031',
+            'phone' => '+22891000031',
             'first_name' => 'Nouveau',
         ]);
 
@@ -353,25 +352,25 @@ class AuditScenariosTest extends TestCase
     public function test_complete_social_profile_fills_missing_fields_on_an_authenticated_social_client(): void
     {
         $client = Client::create([
-            'uuid'           => (string) Str::uuid(),
-            'first_name'     => 'Google',
-            'email'          => 'google-user@example.com',
+            'uuid' => (string) Str::uuid(),
+            'first_name' => 'Google',
+            'email' => 'google-user@example.com',
             'oauth_provider' => 'google',
-            'oauth_id'       => 'g-complete-1',
+            'oauth_id' => 'g-complete-1',
         ]);
         $token = $client->createToken('mobile-app')->plainTextToken;
 
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson('/api/auth/social/complete-profile', [
                 'first_name' => 'Google',
-                'last_name'  => 'User',
-                'phone'      => '+22891000034',
-                'birthdate'  => '1998-05-20',
+                'last_name' => 'User',
+                'phone' => '+22891000034',
+                'birthdate' => '1998-05-20',
             ]);
 
         $response->assertOk();
         $this->assertDatabaseHas('clients', [
-            'id'    => $client->id,
+            'id' => $client->id,
             'phone' => '+22891000034',
         ]);
     }

@@ -11,8 +11,7 @@ final class CurrentActor
         public readonly string $type,
         public readonly ?StaffUser $staffUser,
         public readonly string $role,
-    ) {
-    }
+    ) {}
 
     public static function resolve(Request $request): self
     {
@@ -33,7 +32,7 @@ final class CurrentActor
                 // émise que par StaffAuthController, toujours correctement
                 // scopée.
                 if ($staffUser === null || ! $staffUser->is_active || $staffUser->restaurant_id !== $user->id) {
-                    throw new StaffUserInactiveException();
+                    throw new StaffUserInactiveException;
                 }
 
                 return new self('staff', $staffUser, $staffUser->role);
@@ -52,7 +51,7 @@ final class CurrentActor
     {
         return [
             'type' => $this->type,
-            'id'   => $this->staffUser?->id,
+            'id' => $this->staffUser?->id,
             'name' => $this->staffUser?->name,
             'role' => $this->role,
         ];

@@ -2,9 +2,9 @@
 
 namespace App\Listeners;
 
-use App\Events\StampAdded;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use App\Events\RewardUnlocked;
+use App\Events\StampAdded;
+use App\Models\Reward;
 
 class CheckRewardUnlock
 {
@@ -17,9 +17,9 @@ class CheckRewardUnlock
     {
         if ($event->card->stamps >= $event->card->required_stamps) {
             $event->card->update(['reward_unlocked_at' => now()]);
-            
+
             // Création de la récompense
-            $reward = \App\Models\Reward::create([
+            $reward = Reward::create([
                 'customer_id' => $event->card->user_id,
                 'title' => 'Cadeau de fidélité',
                 'description' => 'Bravo, tu as atteint ton palier de fidélité !',

@@ -26,8 +26,8 @@ class StaffChangePasswordTest extends TestCase
 
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->putJson('/api/auth/merchant/change-password', [
-                'current_password'      => 'oldoperatorpass',
-                'password'              => 'newoperatorpass',
+                'current_password' => 'oldoperatorpass',
+                'password' => 'newoperatorpass',
                 'password_confirmation' => 'newoperatorpass',
             ]);
 
@@ -68,8 +68,8 @@ class StaffChangePasswordTest extends TestCase
 
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->putJson('/api/auth/merchant/change-password', [
-                'current_password'      => 'oldpass123',
-                'password'              => 'newpass456',
+                'current_password' => 'oldpass123',
+                'password' => 'newpass456',
                 'password_confirmation' => 'newpass456',
             ]);
 

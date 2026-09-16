@@ -2,8 +2,8 @@
 
 namespace App\Http\Requests\Auth;
 
-use Illuminate\Foundation\Http\FormRequest;
 use App\Services\Phone\PhoneParser;
+use Illuminate\Foundation\Http\FormRequest;
 
 class VerifyResetOtpRequest extends FormRequest
 {
@@ -14,7 +14,7 @@ class VerifyResetOtpRequest extends FormRequest
 
     protected function prepareForValidation()
     {
-        if ($this->has('phone') && !empty($this->phone)) {
+        if ($this->has('phone') && ! empty($this->phone)) {
             $parser = app(PhoneParser::class);
             $normalized = $parser->normalize($this->phone);
             if ($normalized) {
@@ -28,7 +28,7 @@ class VerifyResetOtpRequest extends FormRequest
         return [
             'phone' => ['required_without:email', 'string'],
             'email' => ['required_without:phone', 'email'],
-            'otp'   => ['required', 'string', 'size:6'],
+            'otp' => ['required', 'string', 'size:6'],
         ];
     }
 
@@ -36,7 +36,7 @@ class VerifyResetOtpRequest extends FormRequest
     {
         return [
             'otp.required' => 'Le code OTP est requis.',
-            'otp.size'     => 'Le code OTP doit contenir 6 caractères.',
+            'otp.size' => 'Le code OTP doit contenir 6 caractères.',
         ];
     }
 }

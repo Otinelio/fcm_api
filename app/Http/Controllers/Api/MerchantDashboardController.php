@@ -9,7 +9,9 @@ use App\Models\LoyaltyCard;
 use App\Models\LoyaltyProgram;
 use App\Models\LoyaltyReward;
 use App\Models\Restaurant;
+use App\Services\Fraud\TransactionFraudDetectionService;
 use App\Services\Loyalty\LoyaltyTierService;
+use App\Services\NotificationDispatcher;
 use App\Services\Referral\ReferralService;
 use App\Support\CurrentActor;
 use Illuminate\Http\JsonResponse;
@@ -29,11 +31,9 @@ class MerchantDashboardController extends Controller
 {
     public function __construct(
         private readonly ReferralService $referralService,
-        private readonly \App\Services\NotificationDispatcher $notifications,
-        private readonly \App\Services\Fraud\TransactionFraudDetectionService $fraudDetectionService,
-    )
-    {
-    }
+        private readonly NotificationDispatcher $notifications,
+        private readonly TransactionFraudDetectionService $fraudDetectionService,
+    ) {}
 
     /**
      * GET /api/merchant/clients
@@ -1465,8 +1465,8 @@ class MerchantDashboardController extends Controller
         foreach ($thresholds as $i => $t) {
             $t = (int) $t;
             $label = $i === 0
-                ? "0 - " . ($t - 1)
-                : "{$prev} - " . ($t - 1);
+                ? '0 - '.($t - 1)
+                : "{$prev} - ".($t - 1);
             $buckets[] = ['label' => $label, 'count' => 0, 'min' => $i === 0 ? 0 : $prev, 'max' => $t - 1];
             $prev = $t;
         }

@@ -19,23 +19,19 @@ class OtpDeliveryServiceTest extends TestCase
     {
         parent::setUp();
         config([
-            'services.zavu.api_key'            => 'zavu-test-key',
-            'services.dialog360.api_key'       => '360dialog-test-key',
+            'services.zavu.api_key' => 'zavu-test-key',
+            'services.dialog360.api_key' => '360dialog-test-key',
             'services.africastalking.username' => 'sandbox',
-            'services.africastalking.api_key'  => 'at-test-key',
+            'services.africastalking.api_key' => 'at-test-key',
         ]);
     }
 
     private function serviceWithDeliveryForced(): OtpDeliveryService
     {
-        $zavuClient = new ZavuClient();
+        $zavuClient = new ZavuClient;
 
-        return new class(
-            new WhatsAppOtpChannel(),
-            new SmsOtpChannel($zavuClient),
-            new ZavuWhatsAppChannel($zavuClient),
-            new ZavuEmailChannel($zavuClient)
-        ) extends OtpDeliveryService {
+        return new class(new WhatsAppOtpChannel, new SmsOtpChannel($zavuClient), new ZavuWhatsAppChannel($zavuClient), new ZavuEmailChannel($zavuClient)) extends OtpDeliveryService
+        {
             protected function shouldSkipRealDelivery(): bool
             {
                 return false;
@@ -102,7 +98,7 @@ class OtpDeliveryServiceTest extends TestCase
     public function test_falls_back_to_africas_talking_when_zavu_sms_fails(): void
     {
         Http::fake([
-            'api.zavu.dev/*'          => Http::response(['error' => 'zavu sms failed'], 400),
+            'api.zavu.dev/*' => Http::response(['error' => 'zavu sms failed'], 400),
             'api.africastalking.com/*' => Http::response(['SMSMessageData' => ['Recipients' => [['status' => 'Success']]]], 200),
         ]);
 
@@ -115,7 +111,7 @@ class OtpDeliveryServiceTest extends TestCase
     public function test_does_not_throw_when_all_phone_channels_fail(): void
     {
         Http::fake([
-            'api.zavu.dev/*'          => Http::response([], 500),
+            'api.zavu.dev/*' => Http::response([], 500),
             'api.africastalking.com/*' => Http::response([], 500),
         ]);
 

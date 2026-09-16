@@ -20,10 +20,10 @@ class RestaurantChangePasswordTest extends TestCase
     private function restaurant(array $overrides = []): Restaurant
     {
         return Restaurant::create(array_merge([
-            'name'     => 'Chez Awa',
+            'name' => 'Chez Awa',
             'category' => 'Restaurant',
-            'email'    => 'commerce@example.com',
-            'phone'    => '+22890000001',
+            'email' => 'commerce@example.com',
+            'phone' => '+22890000001',
             'password' => bcrypt('secret123'),
         ], $overrides));
     }
@@ -60,8 +60,8 @@ class RestaurantChangePasswordTest extends TestCase
 
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->putJson('/api/auth/merchant/change-password', [
-                'current_password'      => 'wrong',
-                'password'              => 'newpassword123',
+                'current_password' => 'wrong',
+                'password' => 'newpassword123',
                 'password_confirmation' => 'newpassword123',
             ]);
 
@@ -77,8 +77,8 @@ class RestaurantChangePasswordTest extends TestCase
 
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->putJson('/api/auth/merchant/change-password', [
-                'current_password'      => 'secret123',
-                'password'              => 'secret123',
+                'current_password' => 'secret123',
+                'password' => 'secret123',
                 'password_confirmation' => 'secret123',
             ]);
 
@@ -93,8 +93,8 @@ class RestaurantChangePasswordTest extends TestCase
 
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->putJson('/api/auth/merchant/change-password', [
-                'current_password'      => 'oldpass123',
-                'password'              => 'newpass456',
+                'current_password' => 'oldpass123',
+                'password' => 'newpass456',
                 'password_confirmation' => 'newpass456',
             ]);
 

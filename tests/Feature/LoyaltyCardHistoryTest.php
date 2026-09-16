@@ -24,6 +24,7 @@ class LoyaltyCardHistoryTest extends TestCase
             'name' => 'Chez Awa', 'category' => 'Restaurant',
             'email' => 'commerce@example.com', 'password' => bcrypt('password123'),
         ]);
+
         return [$restaurant, $restaurant->createToken('merchant-app')->plainTextToken];
     }
 
@@ -31,8 +32,9 @@ class LoyaltyCardHistoryTest extends TestCase
     {
         $client = Client::create([
             'uuid' => (string) Str::uuid(), 'first_name' => 'Ada',
-            'phone' => '+228' . random_int(10000000, 99999999), 'password' => bcrypt('secret123'),
+            'phone' => '+228'.random_int(10000000, 99999999), 'password' => bcrypt('secret123'),
         ]);
+
         return [$client, $client->createToken('client-app')->plainTextToken];
     }
 

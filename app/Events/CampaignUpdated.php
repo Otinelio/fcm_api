@@ -13,14 +13,12 @@ class CampaignUpdated implements ShouldBroadcast
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    public function __construct(public NotificationCampaign $campaign)
-    {
-    }
+    public function __construct(public NotificationCampaign $campaign) {}
 
     public function broadcastOn(): array
     {
         return [
-            new PrivateChannel('merchant.' . $this->campaign->restaurant_id),
+            new PrivateChannel('merchant.'.$this->campaign->restaurant_id),
         ];
     }
 

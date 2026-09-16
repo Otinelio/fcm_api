@@ -2,9 +2,9 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Facades\Log;
 use Pusher\Pusher;
 use Pusher\PusherException;
-use Illuminate\Support\Facades\Log;
 
 class PresenceChecker
 {
@@ -41,7 +41,7 @@ class PresenceChecker
 
         try {
             $response = $this->pusher->get("/channels/{$channelName}/users");
-            
+
             // Le SDK Pusher (version 7+) retourne un objet stdClass déjà décodé
             return ! empty($response->users);
         } catch (PusherException $e) {

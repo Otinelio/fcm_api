@@ -12,14 +12,14 @@ return new class extends Migration
 {
     public function up(): void
     {
-        DB::statement("ALTER TABLE staff_users DROP CONSTRAINT IF EXISTS staff_users_role_check");
+        DB::statement('ALTER TABLE staff_users DROP CONSTRAINT IF EXISTS staff_users_role_check');
         DB::statement("ALTER TABLE staff_users ADD CONSTRAINT staff_users_role_check CHECK (role IN ('admin', 'operator'))");
         DB::statement("ALTER TABLE staff_users ALTER COLUMN role SET DEFAULT 'operator'");
     }
 
     public function down(): void
     {
-        DB::statement("ALTER TABLE staff_users DROP CONSTRAINT IF EXISTS staff_users_role_check");
+        DB::statement('ALTER TABLE staff_users DROP CONSTRAINT IF EXISTS staff_users_role_check');
         DB::statement("ALTER TABLE staff_users ALTER COLUMN role SET DEFAULT 'staff'");
     }
 };

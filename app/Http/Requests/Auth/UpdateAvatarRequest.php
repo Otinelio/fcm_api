@@ -27,10 +27,10 @@ class UpdateAvatarRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'avatar.required'   => 'Une photo est requise.',
-            'avatar.image'      => 'Le fichier doit être une image.',
-            'avatar.mimes'      => 'Formats acceptés : JPG, PNG, WEBP.',
-            'avatar.max'        => 'L\'image ne doit pas dépasser 5 Mo.',
+            'avatar.required' => 'Une photo est requise.',
+            'avatar.image' => 'Le fichier doit être une image.',
+            'avatar.mimes' => 'Formats acceptés : JPG, PNG, WEBP.',
+            'avatar.max' => 'L\'image ne doit pas dépasser 5 Mo.',
             'avatar.dimensions' => 'L\'image doit faire au moins 200x200 pixels.',
         ];
     }

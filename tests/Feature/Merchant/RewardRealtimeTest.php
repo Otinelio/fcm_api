@@ -7,6 +7,7 @@ use App\Events\LoyaltyRewardUpdated;
 use App\Models\Client;
 use App\Models\LoyaltyCard;
 use App\Models\LoyaltyProgram;
+use App\Models\LoyaltyProgramTier;
 use App\Models\LoyaltyReward;
 use App\Models\Restaurant;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -27,9 +28,9 @@ class RewardRealtimeTest extends TestCase
     private function restaurantWithToken(?string $email = null): array
     {
         $restaurant = Restaurant::create([
-            'name'     => 'Chez Awa',
+            'name' => 'Chez Awa',
             'category' => 'Restaurant',
-            'email'    => $email ?? 'commerce@example.com',
+            'email' => $email ?? 'commerce@example.com',
             'password' => bcrypt('password123'),
         ]);
         $token = $restaurant->createToken('merchant-app')->plainTextToken;
@@ -40,17 +41,17 @@ class RewardRealtimeTest extends TestCase
     private function cardFor(Restaurant $restaurant, LoyaltyProgram $program): LoyaltyCard
     {
         $client = Client::create([
-            'uuid'       => (string) Str::uuid(),
+            'uuid' => (string) Str::uuid(),
             'first_name' => 'Ada',
-            'phone'      => '+2289000'.random_int(1000, 9999),
-            'password'   => bcrypt('secret123'),
+            'phone' => '+2289000'.random_int(1000, 9999),
+            'password' => bcrypt('secret123'),
         ]);
 
         return LoyaltyCard::create([
-            'client_id'          => $client->id,
-            'restaurant_id'      => $restaurant->id,
+            'client_id' => $client->id,
+            'restaurant_id' => $restaurant->id,
             'loyalty_program_id' => $program->id,
-            'progress'           => ['stamps_current' => 0],
+            'progress' => ['stamps_current' => 0],
         ]);
     }
 
@@ -65,9 +66,9 @@ class RewardRealtimeTest extends TestCase
         [$restaurant, $token] = $this->restaurantWithToken();
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id,
-            'name'          => 'Programme',
-            'type'          => 'stamps',
-            'config'        => ['goal' => 10],
+            'name' => 'Programme',
+            'type' => 'stamps',
+            'config' => ['goal' => 10],
         ]);
         $card = $this->cardFor($restaurant, $program);
 
@@ -75,8 +76,8 @@ class RewardRealtimeTest extends TestCase
         $channels = $event->broadcastOn();
 
         $this->assertCount(2, $channels);
-        $this->assertSame('private-loyalty.' . $card->client_id, $channels[0]->name);
-        $this->assertSame('private-merchant.' . $restaurant->id, $channels[1]->name);
+        $this->assertSame('private-loyalty.'.$card->client_id, $channels[0]->name);
+        $this->assertSame('private-merchant.'.$restaurant->id, $channels[1]->name);
         $this->assertSame('loyalty.card.updated', $event->broadcastAs());
     }
 
@@ -128,9 +129,9 @@ class RewardRealtimeTest extends TestCase
         [$restaurant, $token] = $this->restaurantWithToken();
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id,
-            'name'          => 'Programme',
-            'type'          => 'stamps',
-            'config'        => ['goal' => 1, 'reward_description' => 'Burger offert'],
+            'name' => 'Programme',
+            'type' => 'stamps',
+            'config' => ['goal' => 1, 'reward_description' => 'Burger offert'],
         ]);
         $card = $this->cardFor($restaurant, $program);
 
@@ -150,9 +151,9 @@ class RewardRealtimeTest extends TestCase
         [$restaurant, $token] = $this->restaurantWithToken();
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id,
-            'name'          => 'Programme',
-            'type'          => 'stamps',
-            'config'        => ['goal' => 1],
+            'name' => 'Programme',
+            'type' => 'stamps',
+            'config' => ['goal' => 1],
         ]);
         $card = $this->cardFor($restaurant, $program);
         $this->withHeader('Authorization', "Bearer {$token}")
@@ -175,9 +176,9 @@ class RewardRealtimeTest extends TestCase
         [$restaurant, $token] = $this->restaurantWithToken();
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id,
-            'name'          => 'Programme',
-            'type'          => 'stamps',
-            'config'        => ['goal' => 1],
+            'name' => 'Programme',
+            'type' => 'stamps',
+            'config' => ['goal' => 1],
         ]);
         $card = $this->cardFor($restaurant, $program);
         $this->withHeader('Authorization', "Bearer {$token}")
@@ -200,9 +201,9 @@ class RewardRealtimeTest extends TestCase
         [$restaurant, $token] = $this->restaurantWithToken();
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id,
-            'name'          => 'Programme',
-            'type'          => 'stamps',
-            'config'        => ['goal' => 1],
+            'name' => 'Programme',
+            'type' => 'stamps',
+            'config' => ['goal' => 1],
         ]);
         $card = $this->cardFor($restaurant, $program);
         $this->withHeader('Authorization', "Bearer {$token}")
@@ -213,18 +214,18 @@ class RewardRealtimeTest extends TestCase
 
         $channels = $event->broadcastOn();
         $this->assertCount(2, $channels);
-        $this->assertSame('private-loyalty.' . $card->client_id, $channels[0]->name);
-        $this->assertSame('private-merchant.' . $restaurant->id, $channels[1]->name);
+        $this->assertSame('private-loyalty.'.$card->client_id, $channels[0]->name);
+        $this->assertSame('private-merchant.'.$restaurant->id, $channels[1]->name);
         $this->assertSame('loyalty.reward.updated', $event->broadcastAs());
         $this->assertSame(
             [
-                'id'              => $reward->id,
+                'id' => $reward->id,
                 'loyalty_card_id' => $card->id,
-                'status'          => 'available',
+                'status' => 'available',
                 'program_tier_id' => null,
-                'level_name'      => null,
-                'position'        => null,
-                'icon_key'        => null,
+                'level_name' => null,
+                'position' => null,
+                'icon_key' => null,
             ],
             $event->broadcastWith()
         );
@@ -233,27 +234,27 @@ class RewardRealtimeTest extends TestCase
     public function test_card_updated_broadcast_includes_tiers(): void
     {
         [$restaurant, $token] = $this->restaurantWithToken();
-        $program = \App\Models\LoyaltyProgram::create([
+        $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id, 'name' => 'Programme', 'type' => 'stamps', 'config' => [],
         ]);
-        \App\Models\LoyaltyProgramTier::create([
+        LoyaltyProgramTier::create([
             'loyalty_program_id' => $program->id, 'order' => 1,
             'goal' => 2, 'level_name' => 'Bronze', 'reward_description' => 'Café offert',
         ]);
-        \App\Models\LoyaltyProgramTier::create([
+        LoyaltyProgramTier::create([
             'loyalty_program_id' => $program->id, 'order' => 2,
             'goal' => 4, 'level_name' => 'Or', 'reward_description' => 'Menu offert',
         ]);
         $card = $this->cardFor($restaurant, $program);
 
-        \Illuminate\Support\Facades\Event::fake([\App\Events\LoyaltyRewardUpdated::class]);
+        Event::fake([LoyaltyRewardUpdated::class]);
 
         $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson("/api/merchant/clients/{$card->id}/stamps")->assertOk();
         $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson("/api/merchant/clients/{$card->id}/stamps")->assertOk();
 
-        \Illuminate\Support\Facades\Event::assertDispatched(\App\Events\LoyaltyRewardUpdated::class, function ($event) {
+        Event::assertDispatched(LoyaltyRewardUpdated::class, function ($event) {
             $payload = $event->broadcastWith();
 
             return $payload['level_name'] === 'Bronze' && $payload['position'] === 1 && $payload['program_tier_id'] !== null;

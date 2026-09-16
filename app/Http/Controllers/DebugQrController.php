@@ -28,11 +28,11 @@ class DebugQrController extends Controller
 
     public function qr(Restaurant $restaurant): Response
     {
-        abort_if(!$restaurant->qr_token, 404, 'Ce restaurant n\'a pas encore de qr_token.');
+        abort_if(! $restaurant->qr_token, 404, 'Ce restaurant n\'a pas encore de qr_token.');
 
         $renderer = new ImageRenderer(
             new RendererStyle(320),
-            new SvgImageBackEnd(),
+            new SvgImageBackEnd,
         );
         $svg = (new Writer($renderer))->writeString($restaurant->qr_token);
 

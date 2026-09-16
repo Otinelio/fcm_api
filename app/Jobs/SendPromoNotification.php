@@ -2,10 +2,9 @@
 
 namespace App\Jobs;
 
+use App\Services\Fcm\FcmService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
-
-use App\Services\Fcm\FcmService;
 
 class SendPromoNotification implements ShouldQueue
 {

@@ -3,7 +3,6 @@
 namespace App\Events;
 
 use App\Models\Reward;
-use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\PresenceChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
@@ -13,14 +12,12 @@ class RewardUnlocked implements ShouldBroadcast
 {
     use Dispatchable, SerializesModels;
 
-    public function __construct(public Reward $reward)
-    {
-    }
+    public function __construct(public Reward $reward) {}
 
     public function broadcastOn(): array
     {
         return [
-            new PresenceChannel('customer.' . $this->reward->customer_id),
+            new PresenceChannel('customer.'.$this->reward->customer_id),
         ];
     }
 

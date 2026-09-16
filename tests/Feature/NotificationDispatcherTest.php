@@ -134,7 +134,7 @@ class NotificationDispatcherTest extends TestCase
             return $event->notification->is($notification)
                 && count($channels) === 1
                 && $channels[0] instanceof PrivateChannel
-                && $channels[0]->name === 'private-loyalty.' . $client->id;
+                && $channels[0]->name === 'private-loyalty.'.$client->id;
         });
     }
 
@@ -160,7 +160,7 @@ class NotificationDispatcherTest extends TestCase
             $channels = $event->broadcastOn();
 
             return count($channels) === 1
-                && $channels[0]->name === 'private-merchant.' . $restaurant->id;
+                && $channels[0]->name === 'private-merchant.'.$restaurant->id;
         });
     }
 }

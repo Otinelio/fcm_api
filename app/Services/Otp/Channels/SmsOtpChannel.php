@@ -56,9 +56,9 @@ class SmsOtpChannel
                 ->timeout(8)
                 ->post('https://api.africastalking.com/version1/messaging', [
                     'username' => $username,
-                    'to'       => $phoneE164,
-                    'message'  => "Miva Fid - votre code de verification : {$code}",
-                    'from'     => config('services.africastalking.sender_id'),
+                    'to' => $phoneE164,
+                    'message' => "Miva Fid - votre code de verification : {$code}",
+                    'from' => config('services.africastalking.sender_id'),
                 ]);
 
             return $response->successful();

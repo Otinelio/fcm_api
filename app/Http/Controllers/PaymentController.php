@@ -3,8 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\PaymentTransaction;
+use App\Models\Restaurant;
 use App\Models\RestaurantSubscription;
 use App\Models\SubscriptionPlan;
+use FedaPay\Transaction;
 use Illuminate\Http\Request;
 
 class PaymentController extends Controller
@@ -13,7 +15,7 @@ class PaymentController extends Controller
     {
         // adapte selon ta relation user -> restaurant
         // Here we create a mock restaurant for the user if it doesn't exist
-        $restaurant = \App\Models\Restaurant::firstOrCreate(['name' => $request->user()->name . ' Restaurant']);
+        $restaurant = Restaurant::firstOrCreate(['name' => $request->user()->name.' Restaurant']);
         $user = $request->user();
 
         // 1. On crée d'abord l'abonnement en "pending" — il ne devient "active"
@@ -25,11 +27,11 @@ class PaymentController extends Controller
         ]);
 
         // 2. On crée la transaction FedaPay côté API.
-        $fedaTransaction = \FedaPay\Transaction::create([
+        $fedaTransaction = Transaction::create([
             'description' => "Abonnement {$plan->name} - {$restaurant->name}",
             'amount' => $plan->price_xof,
             'currency' => ['iso' => 'XOF'],
-            'callback_url' => config('app.url') . '/paiement/retour',
+            'callback_url' => config('app.url').'/paiement/retour',
             'customer' => [
                 'firstname' => $user->name,
                 'lastname' => 'Admin',

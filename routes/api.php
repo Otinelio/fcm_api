@@ -94,10 +94,10 @@ Route::middleware(['auth:sanctum', 'staff.active'])->prefix('merchant')->group(f
     Route::get('/clients/lookup', [MerchantDashboardController::class, 'lookup'])->middleware('throttle:merchant-lookup');
     Route::get('/clients/{loyaltyCard}', [MerchantDashboardController::class, 'showClient']);
     Route::get('/clients/{loyaltyCard}/history', [MerchantDashboardController::class, 'clientHistory']);
-Route::post('/clients/{loyaltyCard}/stamps', [MerchantDashboardController::class, 'addStamp']);
-     Route::delete('/clients/{loyaltyCard}/stamps', [MerchantDashboardController::class, 'removeStamp']);
-     Route::delete('/clients/{loyaltyCard}/cashback', [MerchantDashboardController::class, 'removeCashback']);
-     Route::post('/clients/{loyaltyCard}/redeem-cashback', [MerchantDashboardController::class, 'redeemCashback']);
+    Route::post('/clients/{loyaltyCard}/stamps', [MerchantDashboardController::class, 'addStamp']);
+    Route::delete('/clients/{loyaltyCard}/stamps', [MerchantDashboardController::class, 'removeStamp']);
+    Route::delete('/clients/{loyaltyCard}/cashback', [MerchantDashboardController::class, 'removeCashback']);
+    Route::post('/clients/{loyaltyCard}/redeem-cashback', [MerchantDashboardController::class, 'redeemCashback']);
 
     Route::get('/rewards/lookup', [MerchantDashboardController::class, 'lookupReward'])->middleware('throttle:merchant-lookup');
     Route::post('/rewards/{loyaltyReward}/redeem', [MerchantDashboardController::class, 'redeemReward']);
@@ -165,6 +165,7 @@ Route::get('/user', function (Request $request) {
 // use App\Http\Controllers\AuthController;
 use App\Http\Controllers\PaymentController;
 use App\Jobs\SendPromoNotification;
+use App\Models\Client;
 use App\Services\Fcm\FcmService;
 use Illuminate\Support\Facades\Artisan;
 
@@ -240,7 +241,7 @@ Route::middleware('auth:sanctum')->post('/simulate', function (Request $request)
         // Déclenche manuellement la logique anniversaire pour ce compte —
         // ne fonctionne que pour un Client authentifié (seul `birthdate`
         // existe sur ce modèle, pas sur `Restaurant`).
-        if ($user instanceof \App\Models\Client) {
+        if ($user instanceof Client) {
             $user->update(['birthdate' => now()->format('Y-m-d')]);
         }
 

@@ -4,26 +4,25 @@ namespace App\Services\Fraud;
 
 use App\Models\LoyaltyCard;
 use App\Models\LoyaltyProgram;
+use App\Models\Restaurant;
+use App\Services\NotificationDispatcher;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class TransactionFraudDetectionService
 {
     public function __construct(
-        private readonly \App\Services\NotificationDispatcher $notifications,
-    ) {
-    }
+        private readonly NotificationDispatcher $notifications,
+    ) {}
 
     /**
      * Evaluate a transaction for potential fraud.
      * Throws a ValidationException if fraud is detected, as requested by the user.
      *
-     * @param LoyaltyCard $card
-     * @param LoyaltyProgram $program
-     * @param float|null $amountFcfa The purchase amount (for spend or cashback programs)
-     * @param float $earnedValue The amount of stamps, points, or cashback earned
-     * @param string $type The transaction type (e.g. 'stamp', 'cashback_earn')
-     * @param \App\Models\Restaurant $restaurant
+     * @param  float|null  $amountFcfa  The purchase amount (for spend or cashback programs)
+     * @param  float  $earnedValue  The amount of stamps, points, or cashback earned
+     * @param  string  $type  The transaction type (e.g. 'stamp', 'cashback_earn')
+     *
      * @throws ValidationException
      */
     public function validateAndThrowIfSuspicious(
@@ -32,7 +31,7 @@ class TransactionFraudDetectionService
         ?float $amountFcfa,
         float $earnedValue,
         string $type,
-        \App\Models\Restaurant $restaurant
+        Restaurant $restaurant
     ): void {
         $reason = null;
 
@@ -45,16 +44,16 @@ class TransactionFraudDetectionService
             ->count();
 
         if ($recentScansCount >= 3) {
-            $reason = "Plus de 3 scans effectués au cours de la dernière heure pour la carte de ce client.";
+            $reason = 'Plus de 3 scans effectués au cours de la dernière heure pour la carte de ce client.';
         }
 
         // 2. Check for unusually large purchases
-        if (!$reason && $amountFcfa !== null && $amountFcfa > 500000) {
-            $reason = "Le montant de l'achat (" . number_format($amountFcfa, 0, ',', ' ') . " FCFA) dépasse la limite de sécurité (500 000 FCFA).";
+        if (! $reason && $amountFcfa !== null && $amountFcfa > 500000) {
+            $reason = "Le montant de l'achat (".number_format($amountFcfa, 0, ',', ' ').' FCFA) dépasse la limite de sécurité (500 000 FCFA).';
         }
 
         // 3. Check for massive credits
-        if (!$reason) {
+        if (! $reason) {
             if ($type === 'stamp') {
                 if ($program->type === 'stamps' && $earnedValue > 10) {
                     $reason = "Tentative d'ajout de plus de 10 tampons en une seule fois.";

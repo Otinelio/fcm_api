@@ -26,10 +26,10 @@ class ResetPasswordRestaurantRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'phone'       => ['required_without:email', 'string'],
-            'email'       => ['required_without:phone', 'email'],
+            'phone' => ['required_without:email', 'string'],
+            'email' => ['required_without:phone', 'email'],
             'reset_token' => ['required', 'string'],
-            'password'    => ['required', 'string', 'min:8', 'confirmed'],
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
         ];
     }
 
@@ -37,9 +37,9 @@ class ResetPasswordRestaurantRequest extends FormRequest
     {
         return [
             'reset_token.required' => 'Le jeton de réinitialisation est manquant.',
-            'password.required'    => 'Le mot de passe est obligatoire.',
-            'password.min'         => 'Le mot de passe doit contenir au moins 8 caractères.',
-            'password.confirmed'   => 'Les mots de passe ne correspondent pas.',
+            'password.required' => 'Le mot de passe est obligatoire.',
+            'password.min' => 'Le mot de passe doit contenir au moins 8 caractères.',
+            'password.confirmed' => 'Les mots de passe ne correspondent pas.',
         ];
     }
 }

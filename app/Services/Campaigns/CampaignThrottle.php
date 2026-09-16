@@ -19,6 +19,7 @@ class CampaignThrottle
 {
     /** Plage d'envoi autorisée, heure locale (= UTC ici). */
     public const WINDOW_START_HOUR = 8;
+
     public const WINDOW_END_HOUR = 20;
 
     /** Destinataires/jour, tous commerces confondus par leur propre compteur. */

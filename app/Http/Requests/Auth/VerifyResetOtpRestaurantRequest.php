@@ -28,7 +28,7 @@ class VerifyResetOtpRestaurantRequest extends FormRequest
         return [
             'phone' => ['required_without:email', 'string'],
             'email' => ['required_without:phone', 'email'],
-            'otp'   => ['required', 'string', 'size:6'],
+            'otp' => ['required', 'string', 'size:6'],
         ];
     }
 
@@ -36,7 +36,7 @@ class VerifyResetOtpRestaurantRequest extends FormRequest
     {
         return [
             'otp.required' => 'Le code OTP est requis.',
-            'otp.size'     => 'Le code OTP doit contenir 6 caractères.',
+            'otp.size' => 'Le code OTP doit contenir 6 caractères.',
         ];
     }
 }

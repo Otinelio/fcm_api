@@ -28,8 +28,8 @@ class ZavuClient
     public function sendSms(string $to, string $text): bool
     {
         return $this->sendMessage([
-            'to'      => $to,
-            'text'    => $text,
+            'to' => $to,
+            'text' => $text,
             'channel' => 'sms',
         ]);
     }
@@ -40,8 +40,8 @@ class ZavuClient
     public function sendWhatsApp(string $to, string $text, ?string $templateName = null, array $templateParams = []): bool
     {
         $payload = [
-            'to'      => $to,
-            'text'    => $text,
+            'to' => $to,
+            'text' => $text,
             'channel' => 'whatsapp',
         ];
 
@@ -49,7 +49,7 @@ class ZavuClient
         // Si la variable contient un numéro de téléphone ou une chaîne invalide, on envoie le texte direct.
         if ($templateName && ! str_contains($templateName, '+') && ! str_contains($templateName, ' ') && strlen($templateName) < 64) {
             $payload['template'] = [
-                'name'       => $templateName,
+                'name' => $templateName,
                 'parameters' => $templateParams,
             ];
         }
@@ -65,11 +65,11 @@ class ZavuClient
         $from = config('services.zavu.from_email', 'no-reply@mivafid.com');
 
         return $this->sendMessage([
-            'to'      => $to,
-            'from'    => $from,
+            'to' => $to,
+            'from' => $from,
             'subject' => $subject,
-            'html'    => $htmlBody,
-            'text'    => $textBody ?? strip_tags($htmlBody),
+            'html' => $htmlBody,
+            'text' => $textBody ?? strip_tags($htmlBody),
             'channel' => 'email',
         ]);
     }
@@ -88,9 +88,9 @@ class ZavuClient
 
         try {
             $headers = [
-                'Authorization' => 'Bearer ' . $apiKey,
-                'Content-Type'  => 'application/json',
-                'Accept'        => 'application/json',
+                'Authorization' => 'Bearer '.$apiKey,
+                'Content-Type' => 'application/json',
+                'Accept' => 'application/json',
             ];
 
             $senderId = config('services.zavu.sender_id');

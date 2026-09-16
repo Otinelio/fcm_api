@@ -18,7 +18,7 @@ class MerchantRegistrationTest extends TestCase
     public function test_register_creates_the_restaurant_and_returns_a_usable_token(): void
     {
         $response = $this->postJson('/api/auth/merchant/register', [
-            'email'    => 'nouveau-commerce@example.com',
+            'email' => 'nouveau-commerce@example.com',
             'password' => 'password123',
         ]);
 
@@ -45,7 +45,7 @@ class MerchantRegistrationTest extends TestCase
     public function test_register_rejects_a_password_shorter_than_eight_characters(): void
     {
         $response = $this->postJson('/api/auth/merchant/register', [
-            'email'    => 'faible@example.com',
+            'email' => 'faible@example.com',
             'password' => 'short1',
         ]);
 
@@ -56,7 +56,7 @@ class MerchantRegistrationTest extends TestCase
     public function test_step1_business_info_completes_registration_and_flips_has_business_info(): void
     {
         $restaurant = Restaurant::create([
-            'email'    => 'commerce@example.com',
+            'email' => 'commerce@example.com',
             'password' => bcrypt('password123'),
         ]);
         $token = $restaurant->createToken('merchant-app')->plainTextToken;
@@ -65,9 +65,9 @@ class MerchantRegistrationTest extends TestCase
 
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->putJson('/api/auth/merchant/profile', [
-                'name'     => 'Chez Awa',
+                'name' => 'Chez Awa',
                 'category' => 'Restaurant',
-                'phone'    => '+228 90 00 00 00',
+                'phone' => '+228 90 00 00 00',
             ]);
 
         $response->assertOk();

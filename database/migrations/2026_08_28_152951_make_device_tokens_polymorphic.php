@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\User;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -17,7 +18,7 @@ return new class extends Migration
         });
 
         DB::table('device_tokens')->update([
-            'tokenable_type' => \App\Models\User::class,
+            'tokenable_type' => User::class,
             'tokenable_id' => DB::raw('user_id'),
         ]);
 
@@ -37,7 +38,7 @@ return new class extends Migration
         });
 
         DB::table('device_tokens')
-            ->where('tokenable_type', \App\Models\User::class)
+            ->where('tokenable_type', User::class)
             ->update(['user_id' => DB::raw('tokenable_id')]);
 
         Schema::table('device_tokens', function (Blueprint $table) {

@@ -4,20 +4,21 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\CompleteSocialProfileRequest;
+use App\Http\Requests\Auth\ForgotPasswordRequest;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\RegisterRequest;
+use App\Http\Requests\Auth\ResetPasswordRequest;
 use App\Http\Requests\Auth\SocialLoginRequest;
-use App\Http\Requests\Auth\UpdateProfileRequest;
 use App\Http\Requests\Auth\UpdateAvatarRequest;
+use App\Http\Requests\Auth\UpdateProfileRequest;
+use App\Http\Requests\Auth\ValidateRegisterStep1Request;
+use App\Http\Requests\Auth\VerifyResetOtpRequest;
 use App\Models\Client;
 use App\Services\Auth\SocialAuthService;
 use App\Services\Otp\OtpDeliveryService;
-use App\Http\Requests\Auth\ForgotPasswordRequest;
-use App\Http\Requests\Auth\VerifyResetOtpRequest;
-use App\Http\Requests\Auth\ResetPasswordRequest;
-use App\Http\Requests\Auth\ValidateRegisterStep1Request;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -41,7 +42,7 @@ class ClientAuthController extends Controller
     {
         // Si on arrive ici, c'est que la validation FormRequest a réussi (y compris le FraudRiskService)
         return response()->json([
-            'message' => 'Les informations de l\'étape 1 sont valides.'
+            'message' => 'Les informations de l\'étape 1 sont valides.',
         ]);
     }
 
@@ -60,22 +61,22 @@ class ClientAuthController extends Controller
         $data = $request->validated();
 
         $client = Client::create([
-            'uuid'                  => (string) Str::uuid(),
-            'first_name'            => $data['first_name'],
-            'phone'                 => $data['phone'],
-            'password'              => $data['password'], // Cast 'hashed' dans le modèle
-            'birthdate'             => $data['birthdate'] ?? null,
-            'city'                  => $data['city'] ?? null,
-            'country'               => $data['country'] ?? null,
+            'uuid' => (string) Str::uuid(),
+            'first_name' => $data['first_name'],
+            'phone' => $data['phone'],
+            'password' => $data['password'], // Cast 'hashed' dans le modèle
+            'birthdate' => $data['birthdate'] ?? null,
+            'city' => $data['city'] ?? null,
+            'country' => $data['country'] ?? null,
         ]);
 
         $token = $client->createToken('mobile-app')->plainTextToken;
 
         return response()->json([
-            'message'      => 'Inscription réussie.',
+            'message' => 'Inscription réussie.',
             'access_token' => $token,
-            'token_type'   => 'Bearer',
-            'client'       => $this->clientData($client),
+            'token_type' => 'Bearer',
+            'client' => $this->clientData($client),
         ], 201);
     }
 
@@ -124,10 +125,10 @@ class ClientAuthController extends Controller
         $token = $client->createToken('mobile-app')->plainTextToken;
 
         return response()->json([
-            'message'      => 'Connexion réussie.',
+            'message' => 'Connexion réussie.',
             'access_token' => $token,
-            'token_type'   => 'Bearer',
-            'client'       => $this->clientData($client),
+            'token_type' => 'Bearer',
+            'client' => $this->clientData($client),
         ]);
     }
 
@@ -185,11 +186,11 @@ class ClientAuthController extends Controller
         $needsCompletion = $isNew || ! $client->isProfileComplete();
 
         return response()->json([
-            'message'                   => $isNew ? 'Compte créé via ' . $request->provider . '.' : 'Connexion réussie.',
-            'access_token'              => $token,
-            'token_type'                => 'Bearer',
-            'needs_profile_completion'  => $needsCompletion,
-            'client'                    => $this->clientData($client),
+            'message' => $isNew ? 'Compte créé via '.$request->provider.'.' : 'Connexion réussie.',
+            'access_token' => $token,
+            'token_type' => 'Bearer',
+            'needs_profile_completion' => $needsCompletion,
+            'client' => $this->clientData($client),
         ], $isNew ? 201 : 200);
     }
 
@@ -211,22 +212,28 @@ class ClientAuthController extends Controller
         $client = $request->user();
 
         $data = [
-            'first_name'    => $request->first_name,
-            'last_name'     => $request->last_name,
-            'phone'         => $request->phone,
-            'birthdate'     => $request->birthdate,
+            'first_name' => $request->first_name,
+            'last_name' => $request->last_name,
+            'phone' => $request->phone,
+            'birthdate' => $request->birthdate,
         ];
 
         // Champs optionnels envoyés par le front
-        if ($request->filled('city'))    $data['city']    = $request->city;
-        if ($request->filled('country')) $data['country'] = $request->country;
-        if ($request->filled('email'))   $data['email']   = $request->email;
+        if ($request->filled('city')) {
+            $data['city'] = $request->city;
+        }
+        if ($request->filled('country')) {
+            $data['country'] = $request->country;
+        }
+        if ($request->filled('email')) {
+            $data['email'] = $request->email;
+        }
 
         $client->update($data);
 
         return response()->json([
             'message' => 'Profil complété avec succès.',
-            'client'  => $this->clientData($client->fresh()),
+            'client' => $this->clientData($client->fresh()),
         ]);
     }
 
@@ -265,7 +272,7 @@ class ClientAuthController extends Controller
 
         return response()->json([
             'message' => 'Profil mis à jour.',
-            'client'  => $this->clientData($client->fresh()),
+            'client' => $this->clientData($client->fresh()),
         ]);
     }
 
@@ -300,11 +307,11 @@ class ClientAuthController extends Controller
         // Le chemin est déterministe (avatars/{uuid}.{ext}) : un ré-upload avec la même
         // extension produirait la même URL, ce qui ferait servir l'image en cache côté
         // client (Image.network / CDN). On ajoute un paramètre de cache-busting.
-        $client->update(['avatar_url' => asset(Storage::url($path)) . '?v=' . now()->timestamp]);
+        $client->update(['avatar_url' => asset(Storage::url($path)).'?v='.now()->timestamp]);
 
         return response()->json([
             'message' => 'Photo de profil mise à jour.',
-            'client'  => $this->clientData($client->fresh()),
+            'client' => $this->clientData($client->fresh()),
         ]);
     }
 
@@ -313,7 +320,7 @@ class ClientAuthController extends Controller
      *
      * Supprime la photo de profil du client (retour à l'avatar par défaut).
      */
-    public function deleteAvatar(\Illuminate\Http\Request $request): JsonResponse
+    public function deleteAvatar(Request $request): JsonResponse
     {
         /** @var Client $client */
         $client = $request->user();
@@ -323,7 +330,7 @@ class ClientAuthController extends Controller
 
         return response()->json([
             'message' => 'Photo de profil supprimée.',
-            'client'  => $this->clientData($client->fresh()),
+            'client' => $this->clientData($client->fresh()),
         ]);
     }
 
@@ -370,21 +377,21 @@ class ClientAuthController extends Controller
     private function clientData(Client $client): array
     {
         return [
-            'id'             => $client->id,
-            'uuid'           => $client->uuid,
-            'first_name'     => $client->first_name,
-            'last_name'      => $client->last_name,
-            'phone'          => $client->phone,
-            'email'          => $client->email,
-            'birthdate'      => $client->birthdate?->format('Y-m-d'),
-            'city'           => $client->city,
-            'country'        => $client->country,
-            'avatar_url'     => $client->avatar_url,
+            'id' => $client->id,
+            'uuid' => $client->uuid,
+            'first_name' => $client->first_name,
+            'last_name' => $client->last_name,
+            'phone' => $client->phone,
+            'email' => $client->email,
+            'birthdate' => $client->birthdate?->format('Y-m-d'),
+            'city' => $client->city,
+            'country' => $client->country,
+            'avatar_url' => $client->avatar_url,
             'oauth_provider' => $client->oauth_provider,
             'is_profile_complete' => $client->isProfileComplete(),
             // Date d'inscription — alimente le "Membre depuis" du profil côté
             // mobile, qui retombait sinon sur la date du jour à chaque appel.
-            'created_at'     => $client->created_at?->toIso8601String(),
+            'created_at' => $client->created_at?->toIso8601String(),
         ];
     }
 
@@ -406,7 +413,7 @@ class ClientAuthController extends Controller
 
         $otp = (string) random_int(100000, 999999);
 
-        Cache::put('otp_reset_' . $identifier, $otp, now()->addMinutes(10));
+        Cache::put('otp_reset_'.$identifier, $otp, now()->addMinutes(10));
 
         app(OtpDeliveryService::class)->send($identifier, $otp);
 
@@ -423,7 +430,7 @@ class ClientAuthController extends Controller
     public function verifyResetOtp(VerifyResetOtpRequest $request): JsonResponse
     {
         $identifier = $request->phone ?? $request->email;
-        $cachedOtp = Cache::get('otp_reset_' . $identifier);
+        $cachedOtp = Cache::get('otp_reset_'.$identifier);
 
         if (! $cachedOtp || $cachedOtp !== $request->otp) {
             return response()->json([
@@ -433,13 +440,13 @@ class ClientAuthController extends Controller
 
         // OTP valide, on génère un token de réinitialisation
         $resetToken = (string) Str::uuid();
-        Cache::put('reset_token_' . $identifier, $resetToken, now()->addMinutes(15));
+        Cache::put('reset_token_'.$identifier, $resetToken, now()->addMinutes(15));
 
         // On supprime l'OTP utilisé
-        Cache::forget('otp_reset_' . $identifier);
+        Cache::forget('otp_reset_'.$identifier);
 
         return response()->json([
-            'message'     => 'Code vérifié avec succès.',
+            'message' => 'Code vérifié avec succès.',
             'reset_token' => $resetToken,
         ]);
     }
@@ -447,7 +454,7 @@ class ClientAuthController extends Controller
     public function resetPassword(ResetPasswordRequest $request): JsonResponse
     {
         $identifier = $request->phone ?? $request->email;
-        $cachedToken = Cache::get('reset_token_' . $identifier);
+        $cachedToken = Cache::get('reset_token_'.$identifier);
 
         if (! $cachedToken || $cachedToken !== $request->reset_token) {
             return response()->json([
@@ -470,7 +477,7 @@ class ClientAuthController extends Controller
         ]);
 
         // Invalider le token
-        Cache::forget('reset_token_' . $identifier);
+        Cache::forget('reset_token_'.$identifier);
 
         // Révoquer tous ses tokens actuels pour le forcer à se reconnecter
         $client->tokens()->delete();
@@ -490,7 +497,7 @@ class ClientAuthController extends Controller
      * Vérifie que le mot de passe fourni correspond bien au mot de passe actuel.
      * Utilisé comme première étape du flux de changement de mot de passe.
      */
-    public function verifyPassword(\Illuminate\Http\Request $request): JsonResponse
+    public function verifyPassword(Request $request): JsonResponse
     {
         $request->validate([
             'current_password' => 'required|string',
@@ -502,13 +509,13 @@ class ClientAuthController extends Controller
         if (! Hash::check($request->current_password, $client->password)) {
             return response()->json([
                 'message' => 'Le mot de passe est incorrect.',
-                'valid'   => false,
+                'valid' => false,
             ], 422);
         }
 
         return response()->json([
             'message' => 'Mot de passe vérifié.',
-            'valid'   => true,
+            'valid' => true,
         ]);
     }
 
@@ -522,11 +529,11 @@ class ClientAuthController extends Controller
      * Permet au client connecté de modifier son mot de passe.
      * Requiert : current_password, password, password_confirmation.
      */
-    public function changePassword(\Illuminate\Http\Request $request): JsonResponse
+    public function changePassword(Request $request): JsonResponse
     {
         $request->validate([
-            'current_password'      => 'required|string',
-            'password'              => 'required|string|min:8|confirmed',
+            'current_password' => 'required|string',
+            'password' => 'required|string|min:8|confirmed',
         ]);
 
         /** @var Client $client */

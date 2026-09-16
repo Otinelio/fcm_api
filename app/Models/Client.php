@@ -43,8 +43,8 @@ class Client extends Authenticatable
     protected function casts(): array
     {
         return [
-            'password'          => 'hashed',
-            'birthdate'         => 'date',
+            'password' => 'hashed',
+            'birthdate' => 'date',
             'phone_verified_at' => 'datetime',
         ];
     }
@@ -104,7 +104,7 @@ class Client extends Authenticatable
 
     public function geoOptins()
     {
-        return $this->hasMany(\App\Models\ClientRestaurantGeoOptin::class ?? null, 'client_id');
+        return $this->hasMany(ClientRestaurantGeoOptin::class ?? null, 'client_id');
     }
 
     public function referralsMade()

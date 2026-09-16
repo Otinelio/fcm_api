@@ -4,11 +4,11 @@ namespace App\Services;
 
 use App\Events\NotificationCreated;
 use App\Events\RewardUnlocked;
+use App\Jobs\SendRewardFcmFallback;
 use App\Models\Client;
 use App\Models\Notification;
 use App\Models\Reward;
 use App\Models\RewardNotificationLog;
-use App\Jobs\SendRewardFcmFallback;
 use App\Services\Fcm\FcmService;
 use Illuminate\Database\Eloquent\Model;
 
@@ -49,8 +49,7 @@ class NotificationDispatcher
     public function __construct(
         protected PresenceChecker $presenceChecker,
         protected FcmService $fcm,
-    ) {
-    }
+    ) {}
 
     public function dispatchRewardUnlocked(Reward $reward): void
     {

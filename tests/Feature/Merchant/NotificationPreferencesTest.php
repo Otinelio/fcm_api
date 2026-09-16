@@ -13,9 +13,9 @@ class NotificationPreferencesTest extends TestCase
     private function restaurantWithToken(): array
     {
         $restaurant = Restaurant::create([
-            'name'     => 'Chez Awa',
+            'name' => 'Chez Awa',
             'category' => 'Restaurant',
-            'email'    => 'commerce@example.com',
+            'email' => 'commerce@example.com',
             'password' => bcrypt('password123'),
         ]);
         $token = $restaurant->createToken('merchant-app')->plainTextToken;
@@ -32,11 +32,11 @@ class NotificationPreferencesTest extends TestCase
 
         $response->assertOk();
         $response->assertJsonPath('restaurant.notification_preferences', [
-            'new_client'    => true,
-            'reward'        => true,
-            'low_sms'       => true,
+            'new_client' => true,
+            'reward' => true,
+            'low_sms' => true,
             'weekly_report' => false,
-            'promotions'    => false,
+            'promotions' => false,
         ]);
     }
 
@@ -53,11 +53,11 @@ class NotificationPreferencesTest extends TestCase
             ->assertOk();
 
         $this->assertSame([
-            'new_client'    => false,
-            'reward'        => true,
-            'low_sms'       => true,
+            'new_client' => false,
+            'reward' => true,
+            'low_sms' => true,
             'weekly_report' => true,
-            'promotions'    => false,
+            'promotions' => false,
         ], $restaurant->fresh()->notification_preferences);
     }
 
@@ -67,8 +67,8 @@ class NotificationPreferencesTest extends TestCase
 
         $this->withHeader('Authorization', "Bearer {$token}")
             ->putJson('/api/auth/merchant/notification-preferences', [
-                'promotions'    => true,
-                'low_sms'       => false,
+                'promotions' => true,
+                'low_sms' => false,
             ])
             ->assertOk();
 

@@ -2,8 +2,8 @@
 
 namespace App\Http\Requests\Auth;
 
-use Illuminate\Foundation\Http\FormRequest;
 use App\Services\Phone\PhoneParser;
+use Illuminate\Foundation\Http\FormRequest;
 
 class ForgotPasswordRequest extends FormRequest
 {
@@ -14,7 +14,7 @@ class ForgotPasswordRequest extends FormRequest
 
     protected function prepareForValidation()
     {
-        if ($this->has('phone') && !empty($this->phone)) {
+        if ($this->has('phone') && ! empty($this->phone)) {
             $parser = app(PhoneParser::class);
             $normalized = $parser->normalize($this->phone);
             if ($normalized) {
@@ -35,7 +35,7 @@ class ForgotPasswordRequest extends FormRequest
     {
         return [
             'phone.exists' => 'Aucun compte n\'est associé à ce numéro.',
-            'phone.phone'  => 'Le numéro de téléphone n\'est pas valide.',
+            'phone.phone' => 'Le numéro de téléphone n\'est pas valide.',
             'email.exists' => 'Aucun compte n\'est associé à cette adresse email.',
             'phone.required_without' => 'Veuillez renseigner votre numéro de téléphone ou votre email.',
             'email.required_without' => 'Veuillez renseigner votre email ou votre numéro de téléphone.',

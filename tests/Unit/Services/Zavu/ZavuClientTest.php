@@ -12,10 +12,10 @@ class ZavuClientTest extends TestCase
     {
         parent::setUp();
         config([
-            'services.zavu.api_key'           => 'zavu-test-secret',
-            'services.zavu.sender_id'         => 'MIVAFID',
+            'services.zavu.api_key' => 'zavu-test-secret',
+            'services.zavu.sender_id' => 'MIVAFID',
             'services.zavu.whatsapp_template' => 'otp_verification',
-            'services.zavu.from_email'        => 'no-reply@mivafid.com',
+            'services.zavu.from_email' => 'no-reply@mivafid.com',
         ]);
     }
 
@@ -25,7 +25,7 @@ class ZavuClientTest extends TestCase
             'api.zavu.dev/*' => Http::response(['status' => 'success', 'id' => 'msg_sms_1'], 200),
         ]);
 
-        $client = new ZavuClient();
+        $client = new ZavuClient;
         $sent = $client->sendSms('+22890000001', 'Code test : 123456');
 
         $this->assertTrue($sent);
@@ -45,7 +45,7 @@ class ZavuClientTest extends TestCase
             'api.zavu.dev/*' => Http::response(['status' => 'success', 'id' => 'msg_wa_1'], 200),
         ]);
 
-        $client = new ZavuClient();
+        $client = new ZavuClient;
         $sent = $client->sendWhatsApp('+22890000001', 'Code test : 123456', 'otp_template', ['123456']);
 
         $this->assertTrue($sent);
@@ -63,7 +63,7 @@ class ZavuClientTest extends TestCase
             'api.zavu.dev/*' => Http::response(['status' => 'success', 'id' => 'msg_mail_1'], 200),
         ]);
 
-        $client = new ZavuClient();
+        $client = new ZavuClient;
         $sent = $client->sendEmail('client@example.com', 'Votre code OTP', '<p>Votre code est 123456</p>');
 
         $this->assertTrue($sent);
@@ -82,7 +82,7 @@ class ZavuClientTest extends TestCase
         config(['services.zavu.api_key' => null]);
         Http::fake();
 
-        $client = new ZavuClient();
+        $client = new ZavuClient;
         $this->assertFalse($client->isConfigured());
 
         $sent = $client->sendSms('+22890000001', '123456');

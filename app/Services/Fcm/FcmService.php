@@ -1,11 +1,13 @@
 <?php
+
 namespace App\Services\Fcm;
 
+use App\Models\DeviceToken;
+use App\Models\NotificationLog;
 use Google\Client as GoogleClient;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use App\Models\NotificationLog;
 
 class FcmService
 {
@@ -18,11 +20,12 @@ class FcmService
 
             $this->assertCredentialsMatchProject($credentials);
 
-            $client = new GoogleClient();
+            $client = new GoogleClient;
             $client->setAuthConfig($credentials);
             $client->addScope('https://www.googleapis.com/auth/firebase.messaging');
 
             $token = $client->fetchAccessTokenWithAssertion();
+
             return $token['access_token'];
         });
     }
@@ -34,23 +37,30 @@ class FcmService
      * produit un jeton parfaitement valide, et l'échec n'apparaît qu'à l'envoi
      * sous la forme d'un « FCM send failed » avec un 403 sans explication.
      */
-    private function assertCredentialsMatchProject(string $credentials): void
+    private function assertCredentialsMatchProject(string|array $credentials): void
     {
-        if (! is_file($credentials)) {
-            throw new \RuntimeException(
-                "Compte de service Firebase introuvable : {$credentials}. "
-                . 'Le générer depuis Paramètres du projet > Comptes de service.'
-            );
+        if (is_array($credentials)) {
+            $accountProject = $credentials['project_id'] ?? null;
+            $sourceDesc = 'FIREBASE_CREDENTIALS_JSON';
+        } else {
+            if (! is_file($credentials)) {
+                throw new \RuntimeException(
+                    "Compte de service Firebase introuvable : {$credentials}. "
+                    .'Le générer depuis Paramètres du projet > Comptes de service ou renseigner FIREBASE_CREDENTIALS_JSON.'
+                );
+            }
+
+            $accountProject = json_decode((string) file_get_contents($credentials), true)['project_id'] ?? null;
+            $sourceDesc = $credentials;
         }
 
-        $accountProject = json_decode((string) file_get_contents($credentials), true)['project_id'] ?? null;
         $expectedProject = config('services.firebase.project_id');
 
         if ($accountProject !== null && $expectedProject && $accountProject !== $expectedProject) {
             throw new \RuntimeException(
                 "Le compte de service appartient au projet « {$accountProject} » alors que "
-                . "FIREBASE_PROJECT_ID vaut « {$expectedProject} ». Générer une nouvelle clé "
-                . "privée depuis le projet « {$expectedProject} » et remplacer {$credentials}."
+                ."FIREBASE_PROJECT_ID vaut « {$expectedProject} ». Générer une nouvelle clé "
+                ."privée depuis le projet « {$expectedProject} » et remplacer {$sourceDesc}."
             );
         }
     }
@@ -60,7 +70,7 @@ class FcmService
         $projectId = config('services.firebase.project_id');
 
         // S'assurer que le type est bien présent dans la payload data pour le routage Flutter
-        if (!isset($data['type'])) {
+        if (! isset($data['type'])) {
             $data['type'] = $type;
         }
 
@@ -69,7 +79,7 @@ class FcmService
             'data' => $data,
         ];
 
-        if (!empty($notification)) {
+        if (! empty($notification)) {
             $message['notification'] = $notification;
             if ($imageUrl) {
                 $message['notification']['image'] = $imageUrl;
@@ -80,14 +90,14 @@ class FcmService
                     'sound' => 'default',
                     'channel_id' => 'high_importance_channel',
                     ...($imageUrl ? ['image' => $imageUrl] : []),
-                ]
+                ],
             ];
             $message['apns'] = [
                 'payload' => [
                     'aps' => [
                         'sound' => 'default',
                         'mutable-content' => 1,
-                    ]
+                    ],
                 ],
                 ...($imageUrl ? ['fcm_options' => ['image' => $imageUrl]] : []),
             ];
@@ -118,15 +128,17 @@ class FcmService
                     'sent_at' => now(),
                 ]);
             }
+
             return true;
         }
 
         // Token mort : on le supprime pour ne plus jamais réessayer
         if ($response->status() === 404 || str_contains($response->body(), 'UNREGISTERED')) {
-            \App\Models\DeviceToken::where('token', $deviceToken)->delete();
+            DeviceToken::where('token', $deviceToken)->delete();
         }
 
         Log::warning('FCM send failed', ['status' => $response->status(), 'body' => $response->body()]);
+
         return false;
     }
 
@@ -139,21 +151,21 @@ class FcmService
             'data' => $data,
         ];
 
-        if (!empty($notification)) {
+        if (! empty($notification)) {
             $message['notification'] = $notification;
             $message['android'] = [
                 'priority' => 'high',
                 'notification' => [
                     'sound' => 'default',
-                    'channel_id' => 'high_importance_channel'
-                ]
+                    'channel_id' => 'high_importance_channel',
+                ],
             ];
             $message['apns'] = [
                 'payload' => [
                     'aps' => [
-                        'sound' => 'default'
-                    ]
-                ]
+                        'sound' => 'default',
+                    ],
+                ],
             ];
         }
 
@@ -167,6 +179,7 @@ class FcmService
         }
 
         Log::warning("FCM topic send failed to topic {$topic}", ['status' => $response->status(), 'body' => $response->body()]);
+
         return false;
     }
 }

@@ -322,4 +322,3 @@ class LoyaltyProgramCreationTest extends TestCase
         $this->assertTrue($program->config['welcome_reward']['surprise']);
     }
 }
-

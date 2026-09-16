@@ -11,9 +11,7 @@ class OtpCodeMail extends Mailable
 {
     use Queueable, SerializesModels;
 
-    public function __construct(public readonly string $code)
-    {
-    }
+    public function __construct(public readonly string $code) {}
 
     public function build(): self
     {

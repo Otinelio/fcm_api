@@ -22,8 +22,8 @@ class LoyaltyProgram extends Model
     {
         return [
             'is_active' => 'boolean',
-            'loops'     => 'boolean',
-            'config'    => 'array',
+            'loops' => 'boolean',
+            'config' => 'array',
         ];
     }
 

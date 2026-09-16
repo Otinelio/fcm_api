@@ -25,8 +25,7 @@ class OtpDeliveryService
         private readonly SmsOtpChannel $sms,
         private readonly ?ZavuWhatsAppChannel $zavuWhatsapp = null,
         private readonly ?ZavuEmailChannel $zavuEmail = null,
-    ) {
-    }
+    ) {}
 
     private function zavuMail(): ZavuEmailChannel
     {

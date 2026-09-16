@@ -18,11 +18,12 @@ class DatabaseSeeder extends Seeder
         // Formules d'abonnement : données de référence, requises par le
         // changement de plan marchand sur toute installation.
         $this->call(PlanSeeder::class);
+        $this->call(SuperAdminSeeder::class);
 
         // Utilisateur de test principal avec un solde de points connu
         User::factory()->create([
-            'name'           => 'Test User',
-            'email'          => 'test@example.com',
+            'name' => 'Test User',
+            'email' => 'test@example.com',
             'loyalty_points' => 350,
         ]);
 

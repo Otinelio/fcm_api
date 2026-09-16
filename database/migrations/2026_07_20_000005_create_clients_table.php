@@ -28,7 +28,7 @@ return new class extends Migration
             $table->string('oauth_id')->nullable();
             $table->timestamp('phone_verified_at')->nullable();
             $table->timestamps();
-            
+
             $table->unique(['oauth_provider', 'oauth_id'], 'clients_oauth_unique');
         });
     }

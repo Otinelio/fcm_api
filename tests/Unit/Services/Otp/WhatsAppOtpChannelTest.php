@@ -3,6 +3,7 @@
 namespace Tests\Unit\Services\Otp;
 
 use App\Services\Otp\Channels\WhatsAppOtpChannel;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -22,7 +23,7 @@ class WhatsAppOtpChannelTest extends TestCase
     {
         Http::fake(['waba-v2.360dialog.io/*' => Http::response(['messages' => [['id' => 'wamid.1']]], 200)]);
 
-        $sent = (new WhatsAppOtpChannel())->send('+22890000001', '123456');
+        $sent = (new WhatsAppOtpChannel)->send('+22890000001', '123456');
 
         $this->assertTrue($sent);
         Http::assertSent(function ($request) {
@@ -39,7 +40,7 @@ class WhatsAppOtpChannelTest extends TestCase
     {
         Http::fake(['waba-v2.360dialog.io/*' => Http::response(['error' => 'not on whatsapp'], 400)]);
 
-        $sent = (new WhatsAppOtpChannel())->send('+22890000001', '123456');
+        $sent = (new WhatsAppOtpChannel)->send('+22890000001', '123456');
 
         $this->assertFalse($sent);
     }
@@ -49,7 +50,7 @@ class WhatsAppOtpChannelTest extends TestCase
         config(['services.dialog360.api_key' => null]);
         Http::fake();
 
-        $sent = (new WhatsAppOtpChannel())->send('+22890000001', '123456');
+        $sent = (new WhatsAppOtpChannel)->send('+22890000001', '123456');
 
         $this->assertFalse($sent);
         Http::assertNothingSent();
@@ -57,9 +58,9 @@ class WhatsAppOtpChannelTest extends TestCase
 
     public function test_network_failure_returns_false_instead_of_throwing(): void
     {
-        Http::fake(['waba-v2.360dialog.io/*' => fn () => throw new \Illuminate\Http\Client\ConnectionException('timeout')]);
+        Http::fake(['waba-v2.360dialog.io/*' => fn () => throw new ConnectionException('timeout')]);
 
-        $sent = (new WhatsAppOtpChannel())->send('+22890000001', '123456');
+        $sent = (new WhatsAppOtpChannel)->send('+22890000001', '123456');
 
         $this->assertFalse($sent);
     }

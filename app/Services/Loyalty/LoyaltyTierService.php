@@ -72,7 +72,7 @@ class LoyaltyTierService
 
     /**
      * @return array<int, array{id: ?int, order: int, position: int, goal: int, level_name: ?string, icon_key: ?string, reward_description: string, reveal_reward: bool, validity_days: ?int}>
-     *                                                                                                                                                                                                    Trié par `goal` croissant.
+     *                                                                                                                                                                                         Trié par `goal` croissant.
      */
     public function tiers(?LoyaltyProgram $program): array
     {

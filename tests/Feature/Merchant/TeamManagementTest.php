@@ -5,6 +5,7 @@ namespace Tests\Feature\Merchant;
 use App\Models\Restaurant;
 use App\Models\StaffUser;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
 class TeamManagementTest extends TestCase
@@ -200,7 +201,7 @@ class TeamManagementTest extends TestCase
             ->assertOk();
 
         // Le mot de passe a bien changé...
-        $this->assertTrue(\Illuminate\Support\Facades\Hash::check('brandnewpass', $staff->fresh()->password));
+        $this->assertTrue(Hash::check('brandnewpass', $staff->fresh()->password));
 
         // ...et l'ancien token, potentiellement compromis, ne doit plus
         // fonctionner.

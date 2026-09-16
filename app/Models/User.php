@@ -11,7 +11,6 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 
-
 #[Fillable(['name', 'email', 'password', 'birthday', 'loyalty_points'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
@@ -32,6 +31,7 @@ class User extends Authenticatable
             'loyalty_points' => 'integer',
         ];
     }
+
     public function deviceTokens()
     {
         return $this->morphMany(DeviceToken::class, 'tokenable');

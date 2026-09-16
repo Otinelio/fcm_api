@@ -64,7 +64,7 @@ class MigrateLoyaltyProgramTiers extends Command
                 return false; // cashback sans rewards/levels/goal : aucun palier implicite.
             }
             $rewards = [[
-                'goal'               => $goal,
+                'goal' => $goal,
                 'reward_description' => $program->config['reward_description'] ?? 'Récompense débloquée',
             ]];
         }
@@ -99,11 +99,11 @@ class MigrateLoyaltyProgramTiers extends Command
         DB::transaction(function () use ($program, $rewards, $sameCount, $levels) {
             foreach ($rewards as $index => $reward) {
                 $program->tiers()->create([
-                    'order'               => $index + 1,
-                    'goal'                => (int) $reward['goal'],
-                    'level_name'          => $sameCount ? $levels[$index]['name'] : 'Palier ' . ($index + 1),
-                    'reward_description'  => $reward['reward_description'] ?? 'Récompense débloquée',
-                    'validity_days'       => $reward['validity_days'] ?? null,
+                    'order' => $index + 1,
+                    'goal' => (int) $reward['goal'],
+                    'level_name' => $sameCount ? $levels[$index]['name'] : 'Palier '.($index + 1),
+                    'reward_description' => $reward['reward_description'] ?? 'Récompense débloquée',
+                    'validity_days' => $reward['validity_days'] ?? null,
                 ]);
             }
 

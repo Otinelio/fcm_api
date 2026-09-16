@@ -1,5 +1,8 @@
 <?php
 
+use App\Models\Client;
+use App\Models\Restaurant;
+use App\Models\SuperAdmin;
 use App\Models\User;
 
 return [
@@ -42,6 +45,11 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+
+        'super_admins' => [
+            'driver' => 'session',
+            'provider' => 'super_admins',
+        ],
     ],
 
     /*
@@ -67,14 +75,19 @@ return [
             'model' => env('AUTH_MODEL', User::class),
         ],
 
+        'super_admins' => [
+            'driver' => 'eloquent',
+            'model' => SuperAdmin::class,
+        ],
+
         'clients' => [
             'driver' => 'eloquent',
-            'model'  => \App\Models\Client::class,
+            'model' => Client::class,
         ],
 
         'restaurants' => [
             'driver' => 'eloquent',
-            'model'  => \App\Models\Restaurant::class,
+            'model' => Restaurant::class,
         ],
 
         // 'users' => [

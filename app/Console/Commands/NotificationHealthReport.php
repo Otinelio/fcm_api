@@ -8,6 +8,7 @@ use Illuminate\Console\Command;
 class NotificationHealthReport extends Command
 {
     protected $signature = 'notifications:health-report';
+
     protected $description = 'Affiche le taux de fallback FCM sur les dernières 24h';
 
     public function handle(): void

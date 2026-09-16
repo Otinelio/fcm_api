@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Client;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
@@ -17,10 +18,10 @@ class ClientAvatarTest extends TestCase
     private function makeClient(): Client
     {
         return Client::create([
-            'uuid'       => (string) Str::uuid(),
+            'uuid' => (string) Str::uuid(),
             'first_name' => 'Ada',
-            'phone'      => '+22890000001',
-            'password'   => bcrypt('secret123'),
+            'phone' => '+22890000001',
+            'password' => bcrypt('secret123'),
         ]);
     }
 
@@ -124,7 +125,7 @@ class ClientAvatarTest extends TestCase
         // Le cache-busting repose sur now()->timestamp (précision à la seconde) :
         // on avance explicitement l'horloge de test entre les deux requêtes pour
         // ne pas dépendre de la vitesse d'exécution du test.
-        \Illuminate\Support\Carbon::setTestNow(\Illuminate\Support\Carbon::now());
+        Carbon::setTestNow(Carbon::now());
 
         $firstResponse = $this->postJson('/api/auth/profile/avatar', [
             'avatar' => UploadedFile::fake()->image('avatar.jpg', 300, 300),
@@ -132,7 +133,7 @@ class ClientAvatarTest extends TestCase
         $firstResponse->assertOk();
         $firstUrl = $firstResponse->json('client.avatar_url');
 
-        \Illuminate\Support\Carbon::setTestNow(\Illuminate\Support\Carbon::now()->addSecond());
+        Carbon::setTestNow(Carbon::now()->addSecond());
 
         $secondResponse = $this->postJson('/api/auth/profile/avatar', [
             'avatar' => UploadedFile::fake()->image('avatar.jpg', 300, 300),
@@ -140,7 +141,7 @@ class ClientAvatarTest extends TestCase
         $secondResponse->assertOk();
         $secondUrl = $secondResponse->json('client.avatar_url');
 
-        \Illuminate\Support\Carbon::setTestNow();
+        Carbon::setTestNow();
 
         $this->assertNotSame($firstUrl, $secondUrl);
     }

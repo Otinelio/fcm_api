@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\PaymentTransaction;
+use FedaPay\Error\SignatureVerification;
+use FedaPay\Webhook;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -17,26 +19,29 @@ class FedaPayWebhookController extends Controller
         try {
             // Vérifie la signature ET parse le payload en un seul appel.
             // Lève une exception si la signature ne correspond pas.
-            $event = \FedaPay\Webhook::constructEvent($payload, $signature, $secret);
+            $event = Webhook::constructEvent($payload, $signature, $secret);
         } catch (\UnexpectedValueException $e) {
             Log::warning('Webhook FedaPay : payload invalide');
+
             return response()->json(['error' => 'invalid payload'], 400);
-        } catch (\FedaPay\Error\SignatureVerification $e) {
+        } catch (SignatureVerification $e) {
             Log::warning('Webhook FedaPay : signature invalide - tentative de falsification possible');
+
             return response()->json(['error' => 'invalid signature'], 400);
         }
 
         $transactionData = $event->entity ?? $event->object ?? null;
         $fedaTransactionId = $transactionData->id ?? null;
 
-        if (!$fedaTransactionId) {
+        if (! $fedaTransactionId) {
             return response()->json(['error' => 'missing transaction id'], 400);
         }
 
         $localTransaction = PaymentTransaction::where('fedapay_transaction_id', $fedaTransactionId)->first();
 
-        if (!$localTransaction) {
+        if (! $localTransaction) {
             Log::warning("Webhook FedaPay : transaction inconnue {$fedaTransactionId}");
+
             return response()->json(['error' => 'unknown transaction'], 404);
         }
 

@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Events\LoyaltyRewardUpdated;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\LoyaltyCard;
 use App\Models\LoyaltyReward;
 use App\Models\Restaurant;
+use App\Services\NotificationDispatcher;
 use App\Services\Referral\ReferralService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -16,9 +18,8 @@ class LoyaltyCardController extends Controller
 {
     public function __construct(
         private readonly ReferralService $referralService,
-        private readonly \App\Services\NotificationDispatcher $notifications,
-    ) {
-    }
+        private readonly NotificationDispatcher $notifications,
+    ) {}
 
     /**
      * GET /api/loyalty-cards
@@ -115,7 +116,7 @@ class LoyaltyCardController extends Controller
                 'Nouveau client 👋',
                 "{$client->first_name} a rejoint votre programme de fidélité.",
             );
-            
+
             $welcomeConfig = $program->config['welcome_reward'] ?? null;
             if ($welcomeConfig && ($welcomeConfig['enabled'] ?? false)) {
                 $reward = LoyaltyReward::create([
@@ -124,13 +125,13 @@ class LoyaltyCardController extends Controller
                     'source' => 'welcome',
                     'is_surprise' => (bool) ($welcomeConfig['surprise'] ?? false),
                     'title' => $welcomeConfig['title'] ?: 'Cadeau de bienvenue',
-                    'expires_at' => !empty($welcomeConfig['validity_days']) 
-                        ? now()->addDays((int) $welcomeConfig['validity_days']) 
+                    'expires_at' => ! empty($welcomeConfig['validity_days'])
+                        ? now()->addDays((int) $welcomeConfig['validity_days'])
                         : null,
                 ]);
                 $welcomeRewardId = $reward->id;
-                
-                \App\Events\LoyaltyRewardUpdated::dispatch($reward->load('loyaltyCard'));
+
+                LoyaltyRewardUpdated::dispatch($reward->load('loyaltyCard'));
             }
         }
 
@@ -197,7 +198,7 @@ class LoyaltyCardController extends Controller
             'Nouveau client 👋',
             "{$client->first_name} a rejoint votre programme de fidélité.",
         );
-        
+
         $referralRewardId = null;
         $referralConfig = $program->config['referral_reward'] ?? null;
         if ($referralConfig && ($referralConfig['referred_enabled'] ?? false)) {
@@ -206,8 +207,8 @@ class LoyaltyCardController extends Controller
                 'restaurant_id' => $restaurant->id,
                 'source' => 'referral_bonus',
                 'is_surprise' => (bool) ($referralConfig['referred_surprise'] ?? false),
-                'title' => !empty($referralConfig['referred_label']) ? $referralConfig['referred_label'] : 'Cadeau de parrainage',
-                'expires_at' => !empty($referralConfig['referred_validity_days'])
+                'title' => ! empty($referralConfig['referred_label']) ? $referralConfig['referred_label'] : 'Cadeau de parrainage',
+                'expires_at' => ! empty($referralConfig['referred_validity_days'])
                     ? now()->addDays((int) $referralConfig['referred_validity_days'])
                     : null,
             ]);
@@ -217,7 +218,7 @@ class LoyaltyCardController extends Controller
                 $referral->update(['referred_reward_loyalty_reward_id' => $reward->id]);
             }
 
-            \App\Events\LoyaltyRewardUpdated::dispatch($reward->load('loyaltyCard'));
+            LoyaltyRewardUpdated::dispatch($reward->load('loyaltyCard'));
         }
 
         $welcomeRewardId = null;
@@ -229,13 +230,13 @@ class LoyaltyCardController extends Controller
                 'source' => 'welcome',
                 'is_surprise' => (bool) ($welcomeConfig['surprise'] ?? false),
                 'title' => $welcomeConfig['title'] ?: 'Cadeau de bienvenue',
-                'expires_at' => !empty($welcomeConfig['validity_days']) 
-                    ? now()->addDays((int) $welcomeConfig['validity_days']) 
+                'expires_at' => ! empty($welcomeConfig['validity_days'])
+                    ? now()->addDays((int) $welcomeConfig['validity_days'])
                     : null,
             ]);
             $welcomeRewardId = $reward->id;
-            
-            \App\Events\LoyaltyRewardUpdated::dispatch($reward->load('loyaltyCard'));
+
+            LoyaltyRewardUpdated::dispatch($reward->load('loyaltyCard'));
         }
 
         $card->load(['restaurant', 'loyaltyProgram']);

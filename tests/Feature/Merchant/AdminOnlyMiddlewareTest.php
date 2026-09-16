@@ -5,6 +5,7 @@ namespace Tests\Feature\Merchant;
 use App\Models\Restaurant;
 use App\Models\StaffUser;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
 
 class AdminOnlyMiddlewareTest extends TestCase
@@ -110,7 +111,7 @@ class AdminOnlyMiddlewareTest extends TestCase
     // cette branche ; seul l'ajout de admin.only en relève.
     public function test_subscription_payment_route_requires_admin(): void
     {
-        $route = collect(\Illuminate\Support\Facades\Route::getRoutes())
+        $route = collect(Route::getRoutes())
             ->first(fn ($r) => $r->uri() === 'api/subscriptions/{plan}/pay' && in_array('POST', $r->methods(), true));
 
         $this->assertNotNull($route, 'Route POST /api/subscriptions/{plan}/pay introuvable.');

@@ -18,11 +18,10 @@ class SendRewardFcmFallback implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries = 3;
+
     public int $backoff = 5;
 
-    public function __construct(public int $rewardId)
-    {
-    }
+    public function __construct(public int $rewardId) {}
 
     public function handle(FcmService $fcmService): void
     {
@@ -31,6 +30,7 @@ class SendRewardFcmFallback implements ShouldQueue
             Log::info('Fallback FCM annulé : ack déjà reçu', [
                 'reward_id' => $this->rewardId,
             ]);
+
             return;
         }
 
@@ -47,6 +47,7 @@ class SendRewardFcmFallback implements ShouldQueue
             Log::info('Fallback FCM annulé : verrou déjà pris (envoi déjà en cours/fait)', [
                 'reward_id' => $this->rewardId,
             ]);
+
             return;
         }
 
@@ -56,12 +57,14 @@ class SendRewardFcmFallback implements ShouldQueue
             Log::warning('Fallback FCM : reward introuvable', [
                 'reward_id' => $this->rewardId,
             ]);
+
             return;
         }
 
         $user = $reward->user;
-        if (!$user) {
+        if (! $user) {
             Log::warning('Fallback FCM : user introuvable pour reward', ['reward_id' => $this->rewardId]);
+
             return;
         }
 
@@ -96,7 +99,9 @@ class SendRewardFcmFallback implements ShouldQueue
                 'success' => $success,
             ]);
 
-            if ($success) $sent = true;
+            if ($success) {
+                $sent = true;
+            }
         }
 
         if ($sent) {

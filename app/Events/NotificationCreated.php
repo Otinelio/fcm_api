@@ -24,9 +24,7 @@ class NotificationCreated implements ShouldBroadcast
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    public function __construct(public Notification $notification)
-    {
-    }
+    public function __construct(public Notification $notification) {}
 
     /**
      * @return array<int, Channel>
@@ -36,8 +34,8 @@ class NotificationCreated implements ShouldBroadcast
         $notifiable = $this->notification->notifiable;
 
         return match (true) {
-            $notifiable instanceof Client => [new PrivateChannel('loyalty.' . $notifiable->id)],
-            $notifiable instanceof Restaurant => [new PrivateChannel('merchant.' . $notifiable->id)],
+            $notifiable instanceof Client => [new PrivateChannel('loyalty.'.$notifiable->id)],
+            $notifiable instanceof Restaurant => [new PrivateChannel('merchant.'.$notifiable->id)],
             default => [],
         };
     }

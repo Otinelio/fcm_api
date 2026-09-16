@@ -3,6 +3,8 @@
 namespace App\Jobs;
 
 use App\Models\Client;
+use App\Models\LoyaltyCard;
+use App\Models\LoyaltyReward;
 use App\Models\NotificationCampaign;
 use App\Models\NotificationLog;
 use App\Services\Fcm\FcmService;
@@ -20,13 +22,13 @@ class SendCampaignNotification implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries = 3;
+
     public int $backoff = 5;
 
     public function __construct(
         public int $campaignId,
         public int $clientId,
-    ) {
-    }
+    ) {}
 
     public function handle(FcmService $fcm, NotificationDispatcher $notifications): void
     {
@@ -53,14 +55,14 @@ class SendCampaignNotification implements ShouldQueue
             $campaignData['image_url'] = $campaign->image_url;
         }
 
-        $card = \App\Models\LoyaltyCard::where('client_id', $client->id)
+        $card = LoyaltyCard::where('client_id', $client->id)
             ->where('restaurant_id', $campaign->restaurant_id)
             ->first();
 
         if ($card) {
             $campaignData['card_id'] = (string) $card->id;
             if ($campaign->type === 'reward') {
-                $reward = \App\Models\LoyaltyReward::where('loyalty_card_id', $card->id)
+                $reward = LoyaltyReward::where('loyalty_card_id', $card->id)
                     ->where('status', 'available')
                     ->orderByDesc('created_at')
                     ->first();
@@ -132,7 +134,7 @@ class SendCampaignNotification implements ShouldQueue
             // `notification_logs`, juste des tentatives perdues dans
             // `failed_jobs`) et la campagne reste indéfiniment "envoyée"
             // sans qu'aucun destinataire n'apparaisse en échec.
-            $failureReason = 'exception: ' . $e->getMessage();
+            $failureReason = 'exception: '.$e->getMessage();
             Log::error('SendCampaignNotification: envoi FCM en erreur', [
                 'campaign_id' => $campaign->id,
                 'client_id' => $client->id,

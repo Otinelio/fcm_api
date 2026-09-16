@@ -20,10 +20,10 @@ class RestaurantForgotPasswordTest extends TestCase
     private function restaurant(array $overrides = []): Restaurant
     {
         return Restaurant::create(array_merge([
-            'name'     => 'Chez Awa',
+            'name' => 'Chez Awa',
             'category' => 'Restaurant',
-            'email'    => 'commerce@example.com',
-            'phone'    => '+22890000001',
+            'email' => 'commerce@example.com',
+            'phone' => '+22890000001',
             'password' => bcrypt('secret123'),
         ], $overrides));
     }
@@ -54,16 +54,16 @@ class RestaurantForgotPasswordTest extends TestCase
 
         $verify = $this->postJson('/api/auth/merchant/verify-otp', [
             'phone' => '+22890000001',
-            'otp'   => $otp,
+            'otp' => $otp,
         ]);
         $verify->assertOk();
         $resetToken = $verify->json('reset_token');
         $this->assertNotEmpty($resetToken);
 
         $reset = $this->postJson('/api/auth/merchant/reset-password', [
-            'phone'                 => '+22890000001',
-            'reset_token'           => $resetToken,
-            'password'              => 'NewSecret123',
+            'phone' => '+22890000001',
+            'reset_token' => $resetToken,
+            'password' => 'NewSecret123',
             'password_confirmation' => 'NewSecret123',
         ]);
         $reset->assertOk();
@@ -103,9 +103,9 @@ class RestaurantForgotPasswordTest extends TestCase
         Cache::put('reset_token_merchant_+22890000001', 'the-real-token', now()->addMinutes(15));
 
         $response = $this->postJson('/api/auth/merchant/reset-password', [
-            'phone'                 => '+22890000001',
-            'reset_token'           => 'wrong-token',
-            'password'              => 'NewSecret123',
+            'phone' => '+22890000001',
+            'reset_token' => 'wrong-token',
+            'password' => 'NewSecret123',
             'password_confirmation' => 'NewSecret123',
         ]);
         $response->assertStatus(400);

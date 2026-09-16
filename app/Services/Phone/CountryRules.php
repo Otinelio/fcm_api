@@ -2,8 +2,6 @@
 
 namespace App\Services\Phone;
 
-use App\Services\Phone\PhoneParser;
-
 class CountryRules
 {
     protected PhoneParser $parser;
@@ -19,6 +17,7 @@ class CountryRules
     public function getCountry(string $phoneNumber): ?string
     {
         $parsed = $this->parser->parse($phoneNumber);
+
         return $parsed ? $parsed->getCountry() : null;
     }
 
@@ -33,7 +32,7 @@ class CountryRules
             'GM', 'GH', 'GN', 'GW', 'CI', 'KE', 'LS', 'LR', 'LY', 'MG',
             'MW', 'ML', 'MR', 'MU', 'MA', 'MZ', 'NA', 'NE', 'NG', 'RW',
             'ST', 'SN', 'SC', 'SL', 'SO', 'ZA', 'SS', 'SD', 'TZ', 'TG',
-            'TN', 'UG', 'ZM', 'ZW'
+            'TN', 'UG', 'ZM', 'ZW',
         ];
 
         return in_array(strtoupper($countryCode), $africanCountries);

@@ -24,7 +24,7 @@ class StaffUser extends Model
     protected function casts(): array
     {
         return [
-            'password'  => 'hashed',
+            'password' => 'hashed',
             'is_active' => 'boolean',
         ];
     }

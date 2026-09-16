@@ -30,11 +30,11 @@ return [
 
     // Communications unifiées via Zavu.dev (SMS, WhatsApp, Email)
     'zavu' => [
-        'api_key'           => env('ZAVU_API_KEY'),
-        'sender_id'         => env('ZAVU_SENDER_ID'),
+        'api_key' => env('ZAVU_API_KEY'),
+        'sender_id' => env('ZAVU_SENDER_ID'),
         'whatsapp_template' => env('ZAVU_WHATSAPP_TEMPLATE', 'otp_verification'),
-        'from_email'        => env('ZAVU_FROM_EMAIL', 'no-reply@mivafid.com'),
-        'force_delivery'    => (bool) env('ZAVU_FORCE_DELIVERY', false),
+        'from_email' => env('ZAVU_FROM_EMAIL', 'no-reply@mivafid.com'),
+        'force_delivery' => (bool) env('ZAVU_FORCE_DELIVERY', false),
     ],
 
     // Envoi OTP par SMS via Africa's Talking (repli alternatif)
@@ -66,9 +66,18 @@ return [
         // jeton est rejeté avec « Token Firebase invalide ».
         'project_id' => env('FIREBASE_PROJECT_ID', ''),
 
-        // Chemin du compte de service (FCM). Relatif => résolu depuis la racine
-        // du projet, ce qui rend FIREBASE_CREDENTIALS utilisable tel quel.
+        // Chemin du compte de service (FCM) ou contenu JSON/base64 via env.
         'credentials' => (function () {
+            if ($json = env('FIREBASE_CREDENTIALS_JSON')) {
+                $decoded = json_decode($json, true);
+                if (! is_array($decoded) && ($base64 = base64_decode($json, true))) {
+                    $decoded = json_decode($base64, true);
+                }
+                if (is_array($decoded)) {
+                    return $decoded;
+                }
+            }
+
             $path = env('FIREBASE_CREDENTIALS', 'storage/app/firebase/service-account.json');
 
             return str_starts_with($path, '/') ? $path : base_path($path);

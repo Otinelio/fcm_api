@@ -13,8 +13,8 @@ class ReviewController extends Controller
 {
     public function __construct(
         private readonly NotificationDispatcher $notifications,
-    ) {
-    }
+    ) {}
+
     /**
      * Merchant: Get all reviews for their restaurant
      */

@@ -34,11 +34,11 @@ class ForgotPasswordRestaurantRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'phone.exists'            => 'Aucun compte n\'est associé à ce numéro.',
-            'phone.phone'             => 'Le numéro de téléphone n\'est pas valide.',
-            'email.exists'            => 'Aucun compte n\'est associé à cette adresse email.',
-            'phone.required_without'  => 'Veuillez renseigner votre numéro de téléphone ou votre email.',
-            'email.required_without'  => 'Veuillez renseigner votre email ou votre numéro de téléphone.',
+            'phone.exists' => 'Aucun compte n\'est associé à ce numéro.',
+            'phone.phone' => 'Le numéro de téléphone n\'est pas valide.',
+            'email.exists' => 'Aucun compte n\'est associé à cette adresse email.',
+            'phone.required_without' => 'Veuillez renseigner votre numéro de téléphone ou votre email.',
+            'email.required_without' => 'Veuillez renseigner votre email ou votre numéro de téléphone.',
         ];
     }
 }

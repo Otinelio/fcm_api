@@ -5,6 +5,7 @@ namespace App\Services\Referral;
 use App\Models\LoyaltyCard;
 use App\Models\LoyaltyReward;
 use App\Models\Referral;
+use App\Models\Restaurant;
 use App\Services\NotificationDispatcher;
 use Illuminate\Support\Facades\DB;
 
@@ -26,9 +27,7 @@ class ReferralService
     /** Utilisée quand l'établissement n'a configuré aucune récompense de parrainage. */
     private const DEFAULT_REWARD_TITLE = 'Récompense de parrainage';
 
-    public function __construct(private readonly NotificationDispatcher $notifications)
-    {
-    }
+    public function __construct(private readonly NotificationDispatcher $notifications) {}
 
     /**
      * Crée le parrainage `pending` reliant la carte du filleul à celle du
@@ -137,7 +136,7 @@ class ReferralService
             "{$referredName} a rejoint grâce à votre parrainage — votre récompense arrive dès sa première visite !",
         );
 
-        $restaurant = \App\Models\Restaurant::find($referral->restaurant_id);
+        $restaurant = Restaurant::find($referral->restaurant_id);
         if ($restaurant) {
             $this->notifications->send(
                 $restaurant,
@@ -164,7 +163,7 @@ class ReferralService
             "{$referredName} a rejoint le programme grâce à vous — votre récompense est débloquée !",
         );
 
-        $restaurant = \App\Models\Restaurant::find($referral->restaurant_id);
+        $restaurant = Restaurant::find($referral->restaurant_id);
         if ($restaurant) {
             $this->notifications->send(
                 $restaurant,

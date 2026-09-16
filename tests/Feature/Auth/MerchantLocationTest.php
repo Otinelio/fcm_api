@@ -19,7 +19,7 @@ class MerchantLocationTest extends TestCase
     private function authenticatedRestaurant(): array
     {
         $restaurant = Restaurant::create([
-            'email'    => 'commerce@example.com',
+            'email' => 'commerce@example.com',
             'password' => bcrypt('password123'),
         ]);
         $token = $restaurant->createToken('merchant-app')->plainTextToken;
@@ -33,10 +33,10 @@ class MerchantLocationTest extends TestCase
 
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->putJson('/api/auth/merchant/profile', [
-                'name'      => 'Chez Awa',
-                'category'  => 'Restaurant',
-                'phone'     => '+228 90 00 00 00',
-                'latitude'  => 6.1319,
+                'name' => 'Chez Awa',
+                'category' => 'Restaurant',
+                'phone' => '+228 90 00 00 00',
+                'latitude' => 6.1319,
                 'longitude' => 1.2228,
             ]);
 
@@ -54,10 +54,10 @@ class MerchantLocationTest extends TestCase
 
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->putJson('/api/auth/merchant/profile', [
-                'name'      => 'Chez Awa',
-                'category'  => 'Restaurant',
-                'phone'     => '+228 90 00 00 00',
-                'latitude'  => 91,
+                'name' => 'Chez Awa',
+                'category' => 'Restaurant',
+                'phone' => '+228 90 00 00 00',
+                'latitude' => 91,
                 'longitude' => 1.2228,
             ]);
 
@@ -71,9 +71,9 @@ class MerchantLocationTest extends TestCase
 
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->putJson('/api/auth/merchant/profile', [
-                'name'     => 'Chez Awa',
+                'name' => 'Chez Awa',
                 'category' => 'Restaurant',
-                'phone'    => '+228 90 00 00 00',
+                'phone' => '+228 90 00 00 00',
                 'latitude' => 6.1319,
             ]);
 

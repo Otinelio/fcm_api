@@ -120,5 +120,4 @@ class ClientHistoryTest extends TestCase
             ->getJson("/api/merchant/clients/{$card->id}/history")
             ->assertStatus(403);
     }
-
 }

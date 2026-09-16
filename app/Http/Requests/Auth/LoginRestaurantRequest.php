@@ -17,7 +17,7 @@ class LoginRestaurantRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'email'    => ['required', 'email'],
+            'email' => ['required', 'email'],
             'password' => ['required', 'string'],
         ];
     }
@@ -25,8 +25,8 @@ class LoginRestaurantRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'email.required'    => 'L\'adresse email est obligatoire.',
-            'email.email'       => 'L\'adresse email n\'est pas valide.',
+            'email.required' => 'L\'adresse email est obligatoire.',
+            'email.email' => 'L\'adresse email n\'est pas valide.',
             'password.required' => 'Le mot de passe est obligatoire.',
         ];
     }
@@ -63,6 +63,6 @@ class LoginRestaurantRequest extends FormRequest
 
     private function throttleKey(): string
     {
-        return Str::lower($this->input('email')) . '|' . $this->ip();
+        return Str::lower($this->input('email')).'|'.$this->ip();
     }
 }

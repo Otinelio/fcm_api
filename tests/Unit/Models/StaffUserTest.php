@@ -4,6 +4,7 @@ namespace Tests\Unit\Models;
 
 use App\Models\Restaurant;
 use App\Models\StaffUser;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
@@ -21,10 +22,10 @@ class StaffUserTest extends TestCase
 
         $staff = StaffUser::create([
             'restaurant_id' => $restaurant->id,
-            'name'          => 'Jean',
-            'email'         => 'jean@example.com',
-            'password'      => 'plainpassword',
-            'role'          => 'operator',
+            'name' => 'Jean',
+            'email' => 'jean@example.com',
+            'password' => 'plainpassword',
+            'role' => 'operator',
         ]);
 
         $this->assertTrue(Hash::check('plainpassword', $staff->password));
@@ -39,10 +40,10 @@ class StaffUserTest extends TestCase
 
         $staff = StaffUser::create([
             'restaurant_id' => $restaurant->id,
-            'name'          => 'Jean',
-            'email'         => 'jean2@example.com',
-            'password'      => 'plainpassword',
-            'role'          => 'operator',
+            'name' => 'Jean',
+            'email' => 'jean2@example.com',
+            'password' => 'plainpassword',
+            'role' => 'operator',
         ]);
 
         $this->assertTrue($staff->fresh()->is_active);
@@ -55,14 +56,14 @@ class StaffUserTest extends TestCase
             'email' => 'commerce3@example.com', 'password' => bcrypt('secret123'),
         ]);
 
-        $this->expectException(\Illuminate\Database\QueryException::class);
+        $this->expectException(QueryException::class);
 
         StaffUser::create([
             'restaurant_id' => $restaurant->id,
-            'name'          => 'Jean',
-            'email'         => 'jean3@example.com',
-            'password'      => 'plainpassword',
-            'role'          => 'manager',
+            'name' => 'Jean',
+            'email' => 'jean3@example.com',
+            'password' => 'plainpassword',
+            'role' => 'manager',
         ]);
     }
 
@@ -75,10 +76,10 @@ class StaffUserTest extends TestCase
 
         $staff = StaffUser::create([
             'restaurant_id' => $restaurant->id,
-            'name'          => 'Jean',
-            'email'         => 'jean4@example.com',
-            'password'      => 'plainpassword',
-            'role'          => 'operator',
+            'name' => 'Jean',
+            'email' => 'jean4@example.com',
+            'password' => 'plainpassword',
+            'role' => 'operator',
         ]);
 
         $this->assertTrue($staff->restaurant->is($restaurant));

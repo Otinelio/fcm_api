@@ -5,6 +5,8 @@ namespace Tests\Feature\Merchant;
 use App\Models\Client;
 use App\Models\LoyaltyCard;
 use App\Models\LoyaltyProgram;
+use App\Models\LoyaltyProgramTier;
+use App\Models\LoyaltyReward;
 use App\Models\Restaurant;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -22,9 +24,9 @@ class AddStampTest extends TestCase
     private function restaurantWithToken(): array
     {
         $restaurant = Restaurant::create([
-            'name'     => 'Chez Awa',
+            'name' => 'Chez Awa',
             'category' => 'Restaurant',
-            'email'    => 'commerce@example.com',
+            'email' => 'commerce@example.com',
             'password' => bcrypt('password123'),
         ]);
         $token = $restaurant->createToken('merchant-app')->plainTextToken;
@@ -35,17 +37,17 @@ class AddStampTest extends TestCase
     private function cardFor(Restaurant $restaurant, LoyaltyProgram $program): LoyaltyCard
     {
         $client = Client::create([
-            'uuid'       => (string) Str::uuid(),
+            'uuid' => (string) Str::uuid(),
             'first_name' => 'Ada',
-            'phone'      => '+22890000001',
-            'password'   => bcrypt('secret123'),
+            'phone' => '+22890000001',
+            'password' => bcrypt('secret123'),
         ]);
 
         return LoyaltyCard::create([
-            'client_id'          => $client->id,
-            'restaurant_id'      => $restaurant->id,
+            'client_id' => $client->id,
+            'restaurant_id' => $restaurant->id,
             'loyalty_program_id' => $program->id,
-            'progress'           => ['stamps_current' => 0],
+            'progress' => ['stamps_current' => 0],
         ]);
     }
 
@@ -54,9 +56,9 @@ class AddStampTest extends TestCase
         [$restaurant, $token] = $this->restaurantWithToken();
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id,
-            'name'          => 'Programme',
-            'type'          => 'stamps',
-            'config'        => ['goal' => 10],
+            'name' => 'Programme',
+            'type' => 'stamps',
+            'config' => ['goal' => 10],
         ]);
         $card = $this->cardFor($restaurant, $program);
 
@@ -73,9 +75,9 @@ class AddStampTest extends TestCase
         [$restaurant, $token] = $this->restaurantWithToken();
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id,
-            'name'          => 'Programme',
-            'type'          => 'spend',
-            'config'        => ['goal' => 10, 'fcfa_per_point' => 500],
+            'name' => 'Programme',
+            'type' => 'spend',
+            'config' => ['goal' => 10, 'fcfa_per_point' => 500],
         ]);
         $card = $this->cardFor($restaurant, $program);
 
@@ -91,9 +93,9 @@ class AddStampTest extends TestCase
         [$restaurant, $token] = $this->restaurantWithToken();
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id,
-            'name'          => 'Programme',
-            'type'          => 'spend',
-            'config'        => ['goal' => 10, 'fcfa_per_point' => 500],
+            'name' => 'Programme',
+            'type' => 'spend',
+            'config' => ['goal' => 10, 'fcfa_per_point' => 500],
         ]);
         $card = $this->cardFor($restaurant, $program);
 
@@ -107,8 +109,8 @@ class AddStampTest extends TestCase
         $response->assertJsonPath('points_earned', 5);
         $this->assertSame(5, $card->fresh()->progress['stamps_current']);
         $this->assertDatabaseHas('loyalty_transactions', [
-            'loyalty_card_id'       => $card->id,
-            'value'                 => 5,
+            'loyalty_card_id' => $card->id,
+            'value' => 5,
             'montant_commande_fcfa' => 2500,
         ]);
     }
@@ -118,9 +120,9 @@ class AddStampTest extends TestCase
         [$restaurant, $token] = $this->restaurantWithToken();
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id,
-            'name'          => 'Programme',
-            'type'          => 'spend',
-            'config'        => ['goal' => 10, 'fcfa_per_point' => 500],
+            'name' => 'Programme',
+            'type' => 'spend',
+            'config' => ['goal' => 10, 'fcfa_per_point' => 500],
         ]);
         $card = $this->cardFor($restaurant, $program);
 
@@ -137,9 +139,9 @@ class AddStampTest extends TestCase
         [$restaurant, $token] = $this->restaurantWithToken();
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id,
-            'name'          => 'Programme',
-            'type'          => 'stamps',
-            'config'        => ['goal' => 10],
+            'name' => 'Programme',
+            'type' => 'stamps',
+            'config' => ['goal' => 10],
         ]);
         $card = $this->cardFor($restaurant, $program);
         $card->update(['status' => 'inactive']);
@@ -156,9 +158,9 @@ class AddStampTest extends TestCase
         [$restaurant, $token] = $this->restaurantWithToken();
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id,
-            'name'          => 'Programme',
-            'type'          => 'stamps',
-            'config'        => ['goal' => 1],
+            'name' => 'Programme',
+            'type' => 'stamps',
+            'config' => ['goal' => 1],
         ]);
         $card = $this->cardFor($restaurant, $program);
 
@@ -178,9 +180,9 @@ class AddStampTest extends TestCase
         [$restaurant, $token] = $this->restaurantWithToken();
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id,
-            'name'          => 'Programme',
-            'type'          => 'spend',
-            'config'        => ['goal' => 500, 'fcfa_per_point' => 100],
+            'name' => 'Programme',
+            'type' => 'spend',
+            'config' => ['goal' => 500, 'fcfa_per_point' => 100],
         ]);
         $card = $this->cardFor($restaurant, $program);
         $card->update(['progress' => ['stamps_current' => 480]]);
@@ -198,8 +200,8 @@ class AddStampTest extends TestCase
         $this->assertDatabaseCount('loyalty_transactions', 2); // stamp + 1 cycle_completed
         $this->assertDatabaseHas('loyalty_transactions', [
             'loyalty_card_id' => $card->id,
-            'type'            => 'cycle_completed',
-            'value'           => 500,
+            'type' => 'cycle_completed',
+            'value' => 500,
         ]);
     }
 
@@ -208,9 +210,9 @@ class AddStampTest extends TestCase
         [$restaurant, $token] = $this->restaurantWithToken();
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id,
-            'name'          => 'Programme',
-            'type'          => 'spend',
-            'config'        => ['goal' => 500, 'fcfa_per_point' => 100],
+            'name' => 'Programme',
+            'type' => 'spend',
+            'config' => ['goal' => 500, 'fcfa_per_point' => 100],
         ]);
         $card = $this->cardFor($restaurant, $program);
         $card->update(['progress' => ['stamps_current' => 480]]);
@@ -238,9 +240,9 @@ class AddStampTest extends TestCase
         [$restaurant, $token] = $this->restaurantWithToken();
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id,
-            'name'          => 'Programme',
-            'type'          => 'stamps',
-            'config'        => ['goal' => 1],
+            'name' => 'Programme',
+            'type' => 'stamps',
+            'config' => ['goal' => 1],
         ]);
         $card = $this->cardFor($restaurant, $program);
 
@@ -267,9 +269,9 @@ class AddStampTest extends TestCase
         [$restaurant, $token] = $this->restaurantWithToken();
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id,
-            'name'          => 'Programme',
-            'type'          => 'stamps',
-            'config'        => ['goal' => 5],
+            'name' => 'Programme',
+            'type' => 'stamps',
+            'config' => ['goal' => 5],
         ]);
         $card = $this->cardFor($restaurant, $program);
         $card->update(['progress' => ['stamps_current' => 2]]);
@@ -290,16 +292,16 @@ class AddStampTest extends TestCase
         [$restaurant, $token] = $this->restaurantWithToken();
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id,
-            'name'          => 'Programme',
-            'type'          => 'stamps',
-            'loops'         => false, // cycle unique : reste plafonné au dernier palier
-            'config'        => [],
+            'name' => 'Programme',
+            'type' => 'stamps',
+            'loops' => false, // cycle unique : reste plafonné au dernier palier
+            'config' => [],
         ]);
-        \App\Models\LoyaltyProgramTier::create([
+        LoyaltyProgramTier::create([
             'loyalty_program_id' => $program->id, 'order' => 1,
             'goal' => 2, 'level_name' => 'Bronze', 'reward_description' => 'Café offert',
         ]);
-        \App\Models\LoyaltyProgramTier::create([
+        LoyaltyProgramTier::create([
             'loyalty_program_id' => $program->id, 'order' => 2,
             'goal' => 4, 'level_name' => 'Or', 'reward_description' => 'Menu offert',
         ]);
@@ -337,11 +339,11 @@ class AddStampTest extends TestCase
             'restaurant_id' => $restaurant->id, 'name' => 'Programme', 'type' => 'stamps',
             'loops' => false, 'config' => [],
         ]);
-        \App\Models\LoyaltyProgramTier::create([
+        LoyaltyProgramTier::create([
             'loyalty_program_id' => $program->id, 'order' => 1,
             'goal' => 2, 'level_name' => 'Bronze', 'reward_description' => 'Café offert',
         ]);
-        \App\Models\LoyaltyProgramTier::create([
+        LoyaltyProgramTier::create([
             'loyalty_program_id' => $program->id, 'order' => 2,
             'goal' => 4, 'level_name' => 'Or', 'reward_description' => 'Menu offert',
         ]);
@@ -358,9 +360,9 @@ class AddStampTest extends TestCase
             ->postJson("/api/merchant/clients/{$card->id}/stamps");
         $r2->assertJsonPath('rewards_unlocked_count', 1);
         $this->assertSame(2, $card->fresh()->progress['stamps_current']);
-        $reward = \App\Models\LoyaltyReward::where('loyalty_card_id', $card->id)->first();
+        $reward = LoyaltyReward::where('loyalty_card_id', $card->id)->first();
         $this->assertSame('Café offert', $reward->title);
-        $bronzeTier = \App\Models\LoyaltyProgramTier::where('level_name', 'Bronze')->first();
+        $bronzeTier = LoyaltyProgramTier::where('level_name', 'Bronze')->first();
         $this->assertSame($bronzeTier->id, $reward->program_tier_id);
 
         // 3e et 4e tampons -> palier Or (4) atteint -> 1 récompense de plus (2 au total).
@@ -370,14 +372,14 @@ class AddStampTest extends TestCase
             ->postJson("/api/merchant/clients/{$card->id}/stamps");
         $r4->assertJsonPath('rewards_unlocked_count', 1);
         $r4->assertJsonPath('program_completed', true);
-        $this->assertSame(2, \App\Models\LoyaltyReward::where('loyalty_card_id', $card->id)->count());
+        $this->assertSame(2, LoyaltyReward::where('loyalty_card_id', $card->id)->count());
         $this->assertNotNull($card->fresh()->completed_at);
 
         // 5e tampon : programme terminé (cycle unique), plus aucune progression possible.
         $r5 = $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson("/api/merchant/clients/{$card->id}/stamps");
         $r5->assertStatus(422);
-        $this->assertSame(2, \App\Models\LoyaltyReward::where('loyalty_card_id', $card->id)->count());
+        $this->assertSame(2, LoyaltyReward::where('loyalty_card_id', $card->id)->count());
         $this->assertSame(4, $card->fresh()->progress['stamps_current']);
     }
 
@@ -387,11 +389,11 @@ class AddStampTest extends TestCase
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id, 'name' => 'Programme', 'type' => 'stamps', 'config' => [],
         ]);
-        \App\Models\LoyaltyProgramTier::create([
+        LoyaltyProgramTier::create([
             'loyalty_program_id' => $program->id, 'order' => 1,
             'goal' => 500, 'level_name' => 'Bronze', 'reward_description' => 'Café offert',
         ]);
-        \App\Models\LoyaltyProgramTier::create([
+        LoyaltyProgramTier::create([
             'loyalty_program_id' => $program->id, 'order' => 2,
             'goal' => 1000, 'level_name' => 'Or', 'reward_description' => 'Menu offert',
         ]);
@@ -418,7 +420,7 @@ class AddStampTest extends TestCase
         $program = LoyaltyProgram::create([
             'restaurant_id' => $restaurant->id, 'name' => 'Programme', 'type' => 'stamps', 'config' => [],
         ]);
-        \App\Models\LoyaltyProgramTier::create([
+        LoyaltyProgramTier::create([
             'loyalty_program_id' => $program->id, 'order' => 1,
             'goal' => 3, 'level_name' => null, 'reward_description' => 'Café offert',
         ]);
@@ -436,7 +438,7 @@ class AddStampTest extends TestCase
         $this->assertSame(0, $card->fresh()->progress['stamps_current']);
         $this->assertDatabaseHas('loyalty_transactions', [
             'loyalty_card_id' => $card->id,
-            'type'            => 'cycle_completed',
+            'type' => 'cycle_completed',
         ]);
     }
 }

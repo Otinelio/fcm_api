@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Events\LoyaltyPointAdded;
+use App\Models\Reward;
 use App\Models\User;
+use App\Services\NotificationDispatcher;
 use Illuminate\Http\Request;
 
 class LoyaltyController extends Controller
@@ -20,7 +22,7 @@ class LoyaltyController extends Controller
 
         // Si on franchit un palier de 500 points
         if (floor($oldPoints / 500) < floor($newPoints / 500)) {
-            $reward = \App\Models\Reward::create([
+            $reward = Reward::create([
                 'customer_id' => $customer->id,
                 'title' => 'Palier 500 pts atteint ! 🎉',
                 'description' => 'Bravo, tu as débloqué une récompense exceptionnelle !',
@@ -29,7 +31,7 @@ class LoyaltyController extends Controller
 
             // Module 7 : un seul appel, le dispatcher gère tout
             // (Reverb + presence check + fallback FCM adaptatif)
-            app(\App\Services\NotificationDispatcher::class)->dispatchRewardUnlocked($reward);
+            app(NotificationDispatcher::class)->dispatchRewardUnlocked($reward);
         }
 
         return response()->json([

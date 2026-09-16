@@ -27,10 +27,10 @@ class UpdateLogoRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'logo.required'   => 'Une image est requise.',
-            'logo.image'      => 'Le fichier doit être une image.',
-            'logo.mimes'      => 'Formats acceptés : JPG, PNG, WEBP.',
-            'logo.max'        => 'L\'image ne doit pas dépasser 5 Mo.',
+            'logo.required' => 'Une image est requise.',
+            'logo.image' => 'Le fichier doit être une image.',
+            'logo.mimes' => 'Formats acceptés : JPG, PNG, WEBP.',
+            'logo.max' => 'L\'image ne doit pas dépasser 5 Mo.',
             'logo.dimensions' => 'L\'image doit faire au moins 100x100 pixels.',
         ];
     }

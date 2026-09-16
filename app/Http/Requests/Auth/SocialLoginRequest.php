@@ -17,7 +17,7 @@ class SocialLoginRequest extends FormRequest
             'provider' => ['required', 'string', 'in:google,apple'],
             'id_token' => ['required', 'string'],
             // Apple envoie parfois le nom uniquement lors de la première connexion
-            'name'     => ['nullable', 'string', 'max:200'],
+            'name' => ['nullable', 'string', 'max:200'],
         ];
     }
 
@@ -25,7 +25,7 @@ class SocialLoginRequest extends FormRequest
     {
         return [
             'provider.required' => 'Le fournisseur OAuth est obligatoire.',
-            'provider.in'       => 'Le fournisseur doit être google ou apple.',
+            'provider.in' => 'Le fournisseur doit être google ou apple.',
             'id_token.required' => 'Le token d\'authentification est obligatoire.',
         ];
     }

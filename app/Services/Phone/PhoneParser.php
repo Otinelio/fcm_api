@@ -2,8 +2,8 @@
 
 namespace App\Services\Phone;
 
-use Propaganistas\LaravelPhone\PhoneNumber;
 use libphonenumber\NumberParseException;
+use Propaganistas\LaravelPhone\PhoneNumber;
 
 class PhoneParser
 {
@@ -17,6 +17,7 @@ class PhoneParser
             if ($defaultCountry) {
                 return new PhoneNumber($phoneNumber, $defaultCountry);
             }
+
             // Assume it has a country code prefix (e.g., +228)
             return new PhoneNumber($phoneNumber);
         } catch (NumberParseException $e) {
@@ -32,7 +33,7 @@ class PhoneParser
     public function normalize(string $phoneNumber, ?string $defaultCountry = null): ?string
     {
         $parsed = $this->parse($phoneNumber, $defaultCountry);
-        if (!$parsed) {
+        if (! $parsed) {
             return null;
         }
 

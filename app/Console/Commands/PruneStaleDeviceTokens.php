@@ -2,10 +2,10 @@
 
 namespace App\Console\Commands;
 
+use App\Models\DeviceToken;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
-use App\Models\DeviceToken;
 
 #[Signature('tokens:prune')]
 #[Description('Prune device tokens that have not been used in 60 days')]
