@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Restaurant;
 use App\Support\CurrentActor;
 use Closure;
 use Illuminate\Http\Request;
@@ -20,6 +21,11 @@ class EnsureStaffActive
 {
     public function handle(Request $request, Closure $next): Response
     {
+        $user = $request->user();
+        if (! $user instanceof Restaurant) {
+            abort(403, 'Accès réservé aux établissements.');
+        }
+
         CurrentActor::resolve($request);
 
         return $next($request);

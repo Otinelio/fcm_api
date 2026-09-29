@@ -16,10 +16,17 @@ use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\RewardAckController;
 use App\Http\Controllers\Api\StaffAuthController;
 use App\Http\Controllers\Api\TeamController;
+use App\Http\Controllers\FedaPayWebhookController;
 use App\Http\Controllers\LoyaltyController;
+use App\Http\Controllers\PaymentController;
+use App\Http\Controllers\SocialRedirectController;
+use App\Jobs\SendPromoNotification;
+use App\Models\Client;
 use App\Models\DeviceToken;
 use App\Models\User;
+use App\Services\Fcm\FcmService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Route;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -30,16 +37,16 @@ Route::prefix('auth')->group(function () {
     // Routes publiques (pas de token nécessaire)
     Route::post('/validate-register-step1', [ClientAuthController::class, 'validateRegisterStep1'])->middleware('throttle:5,1');
     Route::post('/register', [ClientAuthController::class, 'register'])->middleware('throttle:5,1');
-    Route::post('/login', [ClientAuthController::class, 'login']);
+    Route::post('/login', [ClientAuthController::class, 'login'])->middleware('throttle:5,1');
     Route::post('/social', [ClientAuthController::class, 'socialLogin']);
 
     // Password Recovery
-    Route::post('/forgot-password', [ClientAuthController::class, 'forgotPassword']);
-    Route::post('/verify-otp', [ClientAuthController::class, 'verifyResetOtp']);
-    Route::post('/reset-password', [ClientAuthController::class, 'resetPassword']);
+    Route::post('/forgot-password', [ClientAuthController::class, 'forgotPassword'])->middleware('throttle:5,1');
+    Route::post('/verify-otp', [ClientAuthController::class, 'verifyResetOtp'])->middleware('throttle:5,1');
+    Route::post('/reset-password', [ClientAuthController::class, 'resetPassword'])->middleware('throttle:5,1');
 
     // Routes protégées (token Sanctum requis)
-    Route::middleware('auth:sanctum')->group(function () {
+    Route::middleware(['auth:sanctum', 'client.only'])->group(function () {
         Route::get('/me', [ClientAuthController::class, 'me']);
         Route::put('/profile', [ClientAuthController::class, 'updateProfile']);
         Route::post('/profile/avatar', [ClientAuthController::class, 'uploadAvatar'])->middleware('throttle:10,1');
@@ -63,9 +70,9 @@ Route::prefix('auth/merchant')->group(function () {
     Route::post('/staff/login', [StaffAuthController::class, 'login'])->middleware('throttle:5,1');
 
     // Password Recovery
-    Route::post('/forgot-password', [RestaurantAuthController::class, 'forgotPassword']);
-    Route::post('/verify-otp', [RestaurantAuthController::class, 'verifyResetOtp']);
-    Route::post('/reset-password', [RestaurantAuthController::class, 'resetPassword']);
+    Route::post('/forgot-password', [RestaurantAuthController::class, 'forgotPassword'])->middleware('throttle:5,1');
+    Route::post('/verify-otp', [RestaurantAuthController::class, 'verifyResetOtp'])->middleware('throttle:5,1');
+    Route::post('/reset-password', [RestaurantAuthController::class, 'resetPassword'])->middleware('throttle:5,1');
 
     // Routes protégées (token Sanctum requis)
     Route::middleware(['auth:sanctum', 'staff.active'])->group(function () {
@@ -132,20 +139,20 @@ Route::middleware(['auth:sanctum', 'staff.active'])->prefix('merchant')->group(f
     });
 });
 
-Route::middleware('auth:sanctum')->prefix('loyalty-cards')->group(function () {
+Route::middleware(['auth:sanctum', 'client.only'])->prefix('loyalty-cards')->group(function () {
     Route::get('/', [LoyaltyCardController::class, 'index']);
     Route::post('/join', [LoyaltyCardController::class, 'join']);
     Route::get('/{loyaltyCard}', [LoyaltyCardController::class, 'show']);
     Route::get('/{loyaltyCard}/history', [LoyaltyCardController::class, 'history']);
 });
 
-Route::middleware('auth:sanctum')->get('/rewards', [LoyaltyRewardController::class, 'index']);
+Route::middleware(['auth:sanctum', 'client.only'])->get('/rewards', [LoyaltyRewardController::class, 'index']);
 
-Route::middleware('auth:sanctum')->get('/referrals', [ReferralController::class, 'mine']);
+Route::middleware(['auth:sanctum', 'client.only'])->get('/referrals', [ReferralController::class, 'mine']);
 
-Route::middleware('auth:sanctum')->post('/reviews', [ReviewController::class, 'store']);
+Route::middleware(['auth:sanctum', 'client.only'])->post('/reviews', [ReviewController::class, 'store']);
 
-Route::middleware('auth:sanctum')->post('/client/location/proximity-check', [ClientProximityController::class, 'check'])->middleware('throttle:60,1');
+Route::middleware(['auth:sanctum', 'client.only'])->post('/client/location/proximity-check', [ClientProximityController::class, 'check'])->middleware('throttle:60,1');
 
 // Espace publicitaire client (public, throttle anti-scraping)
 Route::get('/advertisements', [ClientAdvertisementController::class, 'index'])->middleware('throttle:60,1');
@@ -163,8 +170,6 @@ Route::middleware('auth:sanctum')->post(
 Route::get('/ping', function () {
     return response()->json(['status' => 'ok']);
 });
-
-use App\Http\Controllers\FedaPayWebhookController;
 
 Route::post('/webhooks/fedapay', [FedaPayWebhookController::class, 'handle']);
 
@@ -185,13 +190,6 @@ Route::get('/user', function (Request $request) {
         'phone' => $user->phone ?? null,
     ]);
 })->middleware('auth:sanctum');
-
-// use App\Http\Controllers\AuthController;
-use App\Http\Controllers\PaymentController;
-use App\Jobs\SendPromoNotification;
-use App\Models\Client;
-use App\Services\Fcm\FcmService;
-use Illuminate\Support\Facades\Artisan;
 
 // Profil utilisateur : nom + solde de points de fidélité
 Route::middleware('auth:sanctum')->group(function () {
@@ -242,7 +240,7 @@ Route::middleware('auth:sanctum')->post('/device-tokens', function (Request $req
     return response()->noContent();
 });
 
-Route::middleware('auth:sanctum')->prefix('notifications')->group(function () {
+Route::middleware(['auth:sanctum', 'client.only'])->prefix('notifications')->group(function () {
     Route::get('/', [NotificationController::class, 'index']);
     Route::get('/unread-count', [NotificationController::class, 'unreadCount']);
     Route::post('/read-all', [NotificationController::class, 'markAllRead']);
@@ -261,5 +259,5 @@ Route::middleware('auth:sanctum')->prefix('notifications')->group(function () {
 // Route::middleware(['auth:super_admins'])->post('/simulate', ...);
 
 // Redirection directe vers les réseaux sociaux des établissements
-Route::get('/r/{identifier}/{platform}', [\App\Http\Controllers\SocialRedirectController::class, 'redirect']);
+Route::get('/r/{identifier}/{platform}', [SocialRedirectController::class, 'redirect']);
 

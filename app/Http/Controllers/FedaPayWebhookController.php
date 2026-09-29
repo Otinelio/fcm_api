@@ -6,6 +6,7 @@ use App\Models\PaymentTransaction;
 use FedaPay\Error\SignatureVerification;
 use FedaPay\Webhook;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class FedaPayWebhookController extends Controller
@@ -64,7 +65,12 @@ class FedaPayWebhookController extends Controller
 
             case 'transaction.canceled':
             case 'transaction.declined':
-                $localTransaction->update(['status' => 'declined']);
+                DB::transaction(function () use ($localTransaction) {
+                    $tx = PaymentTransaction::where('id', $localTransaction->id)->lockForUpdate()->first();
+                    if ($tx && $tx->status !== 'approved') {
+                        $tx->update(['status' => 'declined']);
+                    }
+                });
                 break;
 
             case 'transaction.refunded':
@@ -77,31 +83,41 @@ class FedaPayWebhookController extends Controller
 
     private function activateSubscription(PaymentTransaction $localTransaction, $transactionData): void
     {
-        $localTransaction->update([
-            'status' => 'approved',
-            'mode' => $transactionData->mode ?? null,
-            'raw_payload' => (array) $transactionData,
-        ]);
+        DB::transaction(function () use ($localTransaction, $transactionData) {
+            $tx = PaymentTransaction::where('id', $localTransaction->id)->lockForUpdate()->first();
+            if (! $tx || $tx->status === 'approved') {
+                return;
+            }
 
-        $subscription = $localTransaction->subscription;
-        $plan = $subscription->plan;
+            $tx->update([
+                'status' => 'approved',
+                'mode' => $transactionData->mode ?? null,
+                'raw_payload' => (array) $transactionData,
+            ]);
 
-        $subscription->update([
-            'status' => 'active',
-            'starts_at' => now(),
-            'ends_at' => now()->addDays($plan->duration_days),
-        ]);
+            $subscription = $tx->subscription()->lockForUpdate()->first();
+            if ($subscription) {
+                $plan = $subscription->plan;
 
-        // Pont vers FCM (voir formation FCM) : notifier le restaurant que
-        // son abonnement est actif. À implémenter avec ton service FCM existant.
-        // FcmService::sendToRestaurant($subscription->restaurant, 'Abonnement activé', ...);
+                $subscription->update([
+                    'status' => 'active',
+                    'starts_at' => now(),
+                    'ends_at' => now()->addDays($plan->duration_days),
+                ]);
 
-        Log::info("Abonnement {$subscription->id} activé suite au paiement {$localTransaction->fedapay_transaction_id}");
+                Log::info("Abonnement {$subscription->id} activé suite au paiement {$tx->fedapay_transaction_id}");
+            }
+        });
     }
 
     private function refundSubscription(PaymentTransaction $localTransaction): void
     {
-        $localTransaction->update(['status' => 'refunded']);
-        $localTransaction->subscription->update(['status' => 'canceled']);
+        DB::transaction(function () use ($localTransaction) {
+            $tx = PaymentTransaction::where('id', $localTransaction->id)->lockForUpdate()->first();
+            if ($tx) {
+                $tx->update(['status' => 'refunded']);
+                $tx->subscription()->lockForUpdate()->first()?->update(['status' => 'canceled']);
+            }
+        });
     }
 }
