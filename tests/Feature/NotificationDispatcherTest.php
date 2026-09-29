@@ -34,7 +34,7 @@ class NotificationDispatcherTest extends TestCase
                 ->with(
                     'tok-client-1',
                     ['title' => 'Récompense débloquée 🎁', 'body' => 'Café offert'],
-                    ['type' => 'reward_unlocked', 'reward_id' => 42],
+                    \Mockery::on(fn ($data) => ($data['type'] ?? null) === 'reward_unlocked' && ($data['reward_id'] ?? null) === 42 && isset($data['notification_id'])),
                     $client->id,
                     'reward_unlocked'
                 )
@@ -74,15 +74,15 @@ class NotificationDispatcherTest extends TestCase
 
         app(NotificationDispatcher::class)->send(
             $restaurant,
-            'merchant_new_client',
-            'Nouveau client 👋',
-            'Ada a rejoint votre programme de fidélité.',
+            'internal_audit',
+            'Journal interne 📋',
+            'Événement système enregistré sans push.',
         );
 
         $this->assertDatabaseHas('notifications', [
             'notifiable_type' => $restaurant->getMorphClass(),
             'notifiable_id' => $restaurant->id,
-            'type' => 'merchant_new_client',
+            'type' => 'internal_audit',
         ]);
     }
 

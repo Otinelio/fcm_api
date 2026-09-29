@@ -58,10 +58,11 @@ class MerchantDashboardController extends Controller
             ->where('restaurant_id', $restaurant->id);
 
         if ($search = trim((string) $request->query('q', ''))) {
-            $query->whereHas('client', function ($q) use ($search) {
-                $q->where('first_name', 'like', "%{$search}%")
-                    ->orWhere('last_name', 'like', "%{$search}%")
-                    ->orWhere('phone', 'like', "%{$search}%");
+            $escapedSearch = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $search);
+            $query->whereHas('client', function ($q) use ($escapedSearch) {
+                $q->where('first_name', 'like', "%{$escapedSearch}%")
+                    ->orWhere('last_name', 'like', "%{$escapedSearch}%")
+                    ->orWhere('phone', 'like', "%{$escapedSearch}%");
             });
         }
 

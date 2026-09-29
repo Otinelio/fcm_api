@@ -17,7 +17,6 @@ use App\Http\Controllers\Api\RewardAckController;
 use App\Http\Controllers\Api\StaffAuthController;
 use App\Http\Controllers\Api\TeamController;
 use App\Http\Controllers\FedaPayWebhookController;
-use App\Http\Controllers\LoyaltyController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\SocialRedirectController;
 use App\Jobs\SendPromoNotification;
@@ -173,50 +172,8 @@ Route::get('/ping', function () {
 
 Route::post('/webhooks/fedapay', [FedaPayWebhookController::class, 'handle']);
 
-// Legacy login route (users table) — garder pour rétrocompatibilité
-// Route::post('/login', [AuthController::class, 'login']);
-
-Route::get('/user', function (Request $request) {
-    $user = $request->user();
-    if (! $user) {
-        return response()->json(['message' => 'Non authentifié.'], 401);
-    }
-
-    return response()->json([
-        'id' => $user->id,
-        'type' => class_basename($user),
-        'name' => $user->name ?? trim(($user->first_name ?? '').' '.($user->last_name ?? '')),
-        'email' => $user->email ?? null,
-        'phone' => $user->phone ?? null,
-    ]);
-})->middleware('auth:sanctum');
-
-// Profil utilisateur : nom + solde de points de fidélité
-Route::middleware('auth:sanctum')->group(function () {
-    Route::post('/subscriptions/{plan}/pay', [PaymentController::class, 'initSubscriptionPayment'])->middleware('admin.only');
-    Route::get('/profile', function (Request $request) {
-        $user = $request->user();
-
-        return response()->json([
-            'id' => $user->id,
-            'name' => $user->name,
-            'email' => $user->email,
-            'loyalty_points' => $user->loyalty_points ?? 0,
-        ]);
-    });
-
-    Route::get('/customers/{customer}', function (User $customer) {
-        return response()->json([
-            'customer_id' => $customer->id,
-            'loyalty_points' => $customer->loyalty_points,
-        ]);
-    });
-});
-
-// ⚠️  SÉCURITÉ : route désactivée — était non protégée (aucun middleware).
-// Anciennement utilisée pour les tests ; le système actuel de fidélité
-// repose sur LoyaltyCard + MerchantDashboardController.
-// Route::post('/customers/{customer}/add-point', [LoyaltyController::class, 'addPoint']);
+// Paiement d'abonnement restaurant (administrateur uniquement)
+Route::middleware(['auth:sanctum', 'admin.only'])->post('/subscriptions/{plan}/pay', [PaymentController::class, 'initSubscriptionPayment']);
 
 Route::middleware('auth:sanctum')->post('/device-tokens', function (Request $request) {
     $request->validate(['token' => 'required|string']);

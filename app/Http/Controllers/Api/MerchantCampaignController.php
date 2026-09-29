@@ -289,10 +289,11 @@ class MerchantCampaignController extends Controller
             ->whereIn('client_id', $clientIds);
 
         if ($search !== '') {
-            $query->whereHas('client', function ($q) use ($search) {
-                $q->where('first_name', 'like', "%{$search}%")
-                    ->orWhere('last_name', 'like', "%{$search}%")
-                    ->orWhere('phone', 'like', "%{$search}%");
+            $escapedSearch = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $search);
+            $query->whereHas('client', function ($q) use ($escapedSearch) {
+                $q->where('first_name', 'like', "%{$escapedSearch}%")
+                    ->orWhere('last_name', 'like', "%{$escapedSearch}%")
+                    ->orWhere('phone', 'like', "%{$escapedSearch}%");
             });
         }
 

@@ -128,7 +128,11 @@ class Restaurant extends Authenticatable
      */
     private static function generateShortCode(): string
     {
+        $attempts = 0;
         do {
+            if (++$attempts > 10) {
+                return Str::upper(Str::random(12));
+            }
             $code = Str::upper(Str::random(8));
         } while (self::where('short_code', $code)->exists());
 

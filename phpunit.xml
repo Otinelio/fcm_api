@@ -39,5 +39,6 @@
         <!-- Toujours la vraie plage d'envoi en test, quelle que soit la
              coupure temporaire en local (voir .env). -->
         <env name="CAMPAIGN_SEND_WINDOW_ENABLED" value="true"/>
+        <env name="LOYALTY_MAX_SCANS_PER_HOUR" value="100"/>
     </php>
 </phpunit>

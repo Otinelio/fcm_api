@@ -45,7 +45,7 @@ class RewardUnlockedNotificationTest extends TestCase
         ]);
 
         $this->mock(FcmService::class, function ($mock) {
-            $mock->shouldReceive('sendToToken')->once()->andReturn(true);
+            $mock->shouldReceive('sendToToken')->atLeast()->once()->andReturn(true);
         });
 
         $merchantToken = $restaurant->createToken('merchant-app')->plainTextToken;

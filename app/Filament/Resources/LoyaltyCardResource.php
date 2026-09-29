@@ -172,7 +172,10 @@ class LoyaltyCardResource extends Resource
                 Tables\Columns\ViewColumn::make('percent')
                     ->label('Progression')
                     ->view('filament.resources.loyalty-card.components.progress-cell')
-                    ->sortable(query: fn ($query, $direction) => $query->orderByRaw("JSON_EXTRACT(progress, '$.stamps_current') {$direction}")),
+                    ->sortable(query: function ($query, $direction) {
+                        $safeDirection = in_array(strtolower($direction), ['asc', 'desc'], true) ? strtolower($direction) : 'asc';
+                        return $query->orderBy('progress->stamps_current', $safeDirection);
+                    }),
 
                 Tables\Columns\TextColumn::make('cycles_completed')
                     ->label('Cycles')

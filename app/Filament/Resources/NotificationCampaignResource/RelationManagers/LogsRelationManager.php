@@ -39,11 +39,12 @@ class LogsRelationManager extends RelationManager
                     ->getStateUsing(fn (NotificationLog $record): string => $record->client ? $record->client->full_name : "Client #{$record->client_id}")
                     ->description(fn (NotificationLog $record): string => $record->client?->phone ? "Tél: {$record->client->phone}" : ($record->client?->email ?? 'Sans contact enregistré'))
                     ->searchable(query: function (Builder $query, string $search): Builder {
-                        return $query->whereHas('client', function (Builder $q) use ($search) {
-                            $q->where('first_name', 'like', "%{$search}%")
-                                ->orWhere('last_name', 'like', "%{$search}%")
-                                ->orWhere('phone', 'like', "%{$search}%")
-                                ->orWhere('email', 'like', "%{$search}%");
+                        $escapedSearch = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $search);
+                        return $query->whereHas('client', function (Builder $q) use ($escapedSearch) {
+                            $q->where('first_name', 'like', "%{$escapedSearch}%")
+                                ->orWhere('last_name', 'like', "%{$escapedSearch}%")
+                                ->orWhere('phone', 'like', "%{$escapedSearch}%")
+                                ->orWhere('email', 'like', "%{$escapedSearch}%");
                         });
                     })
                     ->url(fn (NotificationLog $record): ?string => $record->client_id ? ClientResource::getUrl('edit', ['record' => $record->client_id]) : null)

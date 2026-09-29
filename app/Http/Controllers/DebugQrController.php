@@ -16,6 +16,11 @@ use Illuminate\Support\Facades\Storage;
  */
 class DebugQrController extends Controller
 {
+    public function __construct()
+    {
+        abort_unless(app()->isLocal(), 404);
+    }
+
     public function index()
     {
         $restaurants = Restaurant::query()

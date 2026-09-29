@@ -105,4 +105,9 @@ return [
         'send_window_enabled' => (bool) env('CAMPAIGN_SEND_WINDOW_ENABLED', true),
     ],
 
+    'loyalty' => [
+        'max_scans_per_hour' => (int) env('LOYALTY_MAX_SCANS_PER_HOUR', 3),
+        'max_purchase_amount' => (float) env('LOYALTY_MAX_PURCHASE_AMOUNT', 500000),
+    ],
+
 ];

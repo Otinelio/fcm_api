@@ -235,7 +235,11 @@ class LoyaltyCard extends Model
 
     private static function generateUniqueCode(string $column): string
     {
+        $attempts = 0;
         do {
+            if (++$attempts > 10) {
+                return Str::upper(Str::random(12));
+            }
             $code = Str::upper(Str::random(8));
         } while (self::where($column, $code)->exists());
 

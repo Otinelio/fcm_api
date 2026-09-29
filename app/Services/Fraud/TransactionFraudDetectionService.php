@@ -36,6 +36,7 @@ class TransactionFraudDetectionService
         $reason = null;
 
         // 1. Check for frequent scans (e.g., > 3 scans within the last 1 hour)
+        $maxScans = (int) config('services.loyalty.max_scans_per_hour', 3);
         $recentScansCount = DB::table('loyalty_transactions')
             ->where('loyalty_card_id', $card->id)
             ->whereIn('type', ['stamp', 'cashback_earn'])
@@ -43,8 +44,8 @@ class TransactionFraudDetectionService
             ->where('created_at', '>=', now()->subHour())
             ->count();
 
-        if ($recentScansCount >= 3) {
-            $reason = 'Plus de 3 scans effectués au cours de la dernière heure pour la carte de ce client.';
+        if ($recentScansCount >= $maxScans) {
+            $reason = "Plus de {$maxScans} scans effectués au cours de la dernière heure pour la carte de ce client.";
         }
 
         // 2. Check for unusually large purchases
