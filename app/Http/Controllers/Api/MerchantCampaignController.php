@@ -8,6 +8,7 @@ use App\Models\Client;
 use App\Models\LoyaltyCard;
 use App\Models\Notification;
 use App\Models\NotificationCampaign;
+use App\Models\NotificationLog;
 use App\Models\Restaurant;
 use App\Services\Campaigns\CampaignRecipientResolver;
 use App\Services\Campaigns\CampaignThrottle;
@@ -53,7 +54,14 @@ class MerchantCampaignController extends Controller
             ->map(fn (NotificationCampaign $campaign) => $this->campaignData($campaign))
             ->all();
 
-        return response()->json(['campaigns' => $campaigns]);
+        return response()->json([
+            'campaigns' => $campaigns,
+            'fcm_service' => [
+                'is_suspended' => $restaurant->isFcmSuspended(),
+                'suspended_at' => $restaurant->fcm_suspended_at?->toIso8601String(),
+                'reason' => $restaurant->fcm_suspension_reason,
+            ],
+        ]);
     }
 
     /**
@@ -127,6 +135,19 @@ class MerchantCampaignController extends Controller
         /** @var Restaurant $restaurant */
         $restaurant = $request->user();
 
+        if ($restaurant->isFcmSuspended()) {
+            $msg = 'Le service de notifications Push FCM de votre établissement est temporairement suspendu par l\'administration.';
+            if ($restaurant->fcm_suspension_reason) {
+                $msg .= " Motif : {$restaurant->fcm_suspension_reason}";
+            }
+
+            return response()->json([
+                'message' => $msg,
+                'fcm_suspended' => true,
+                'reason' => $restaurant->fcm_suspension_reason,
+            ], 403);
+        }
+
         $data = $request->validate([
             'type' => ['required', 'string', 'max:50'],
             'title' => ['nullable', 'string', 'max:120'],
@@ -136,7 +157,7 @@ class MerchantCampaignController extends Controller
             'recipient_type' => ['required', 'string', 'max:50'],
             'client_ids' => ['required', 'array', 'min:1'],
             'client_ids.*' => ['integer'],
-            'scheduled_at' => ['nullable', 'date'],
+            'scheduled_at' => ['nullable', 'date', 'after:now'],
         ]);
 
         $imageUrl = $data['image_url'] ?? null;
@@ -312,7 +333,7 @@ class MerchantCampaignController extends Controller
             'recipient_type' => ['nullable', 'string', 'max:50'],
             'client_ids' => ['nullable', 'array'],
             'client_ids.*' => ['integer'],
-            'scheduled_at' => ['nullable', 'date'],
+            'scheduled_at' => ['nullable', 'date', 'after:now'],
             'draft_step' => ['nullable', 'integer', 'min:1', 'max:4'],
         ]);
 
@@ -362,10 +383,16 @@ class MerchantCampaignController extends Controller
             $campaign = NotificationCampaign::create($payload);
         }
 
-        return response()->json([
+        $response = [
             'message' => 'Brouillon sauvegardé.',
             'campaign' => $this->campaignData($campaign->fresh()),
-        ], 200);
+        ];
+
+        if ($restaurant->isFcmSuspended()) {
+            $response['fcm_warning'] = 'Le service FCM de votre établissement est actuellement suspendu. Vous ne pourrez pas programmer ou envoyer cette campagne tant que la suspension n\'aura pas été levée.';
+        }
+
+        return response()->json($response, 200);
     }
 
     /**
@@ -400,7 +427,7 @@ class MerchantCampaignController extends Controller
             'recipient_type' => ['required', 'string', 'max:50'],
             'client_ids' => ['required', 'array', 'min:1'],
             'client_ids.*' => ['integer'],
-            'scheduled_at' => ['nullable', 'date'],
+            'scheduled_at' => ['nullable', 'date', 'after:now'],
         ]);
 
         $imageUrl = $data['image_url'] ?? null;
@@ -440,13 +467,26 @@ class MerchantCampaignController extends Controller
             ], 422);
         }
 
+        if ($restaurant->isFcmSuspended()) {
+            $msg = 'Le service de notifications Push FCM de votre établissement est temporairement suspendu par l\'administration.';
+            if ($restaurant->fcm_suspension_reason) {
+                $msg .= " Motif : {$restaurant->fcm_suspension_reason}";
+            }
+
+            return response()->json([
+                'message' => $msg,
+                'fcm_suspended' => true,
+                'reason' => $restaurant->fcm_suspension_reason,
+            ], 403);
+        }
+
         $explicitSchedule = $data['scheduled_at'] ?? null;
         $sendNow = false;
         $scheduledAt = $explicitSchedule;
         $newStatus = $campaign->status;
         $sentAt = $campaign->sent_at;
 
-        if ($campaign->status === 'draft') {
+        if (in_array($campaign->status, ['draft', 'scheduled'])) {
             $sendNow = $explicitSchedule === null && $this->throttle->isWithinSendWindow();
             $scheduledAt = $explicitSchedule
                 ?? ($this->throttle->isWithinSendWindow() ? null : $this->throttle->nextWindowStart());
@@ -518,6 +558,133 @@ class MerchantCampaignController extends Controller
         $campaign->update(['archived_at' => now()]);
 
         return response()->json(['message' => 'Campagne archivée.']);
+    }
+
+    /**
+     * DELETE /api/merchant/campaigns/{campaign}
+     *
+     * Supprime définitivement une campagne.
+     * - draft : suppression directe
+     * - scheduled : restaure les crédits SMS puis suppression
+     * - sent : suppression campagne, conservation des logs (audit anti-fraude)
+     */
+    public function destroy(Request $request, NotificationCampaign $campaign): JsonResponse
+    {
+        /** @var Restaurant $restaurant */
+        $restaurant = $request->user();
+
+        if ($campaign->restaurant_id !== $restaurant->id) {
+            abort(404);
+        }
+
+        $recipientsCount = $campaign->target['recipients_count'] ?? 0;
+
+        if ($campaign->status === 'scheduled' && is_null($campaign->archived_at)) {
+            $restaurant->increment('sms_credits', $recipientsCount);
+            $this->checkCreditAlerts($restaurant);
+        }
+
+        if ($campaign->status === 'sent') {
+            // Conserver les logs pour audit anti-fraude : détacher la FK avant suppression
+            $campaign->logs()->update(['notification_campaign_id' => null]);
+        }
+
+        $campaign->forceDelete();
+
+        return response()->json(['message' => 'Campagne supprimée définitivement.']);
+    }
+
+    /**
+     * POST /api/merchant/campaigns/{campaign}/resend
+     *
+     * Permet au marchand de renvoyer une notification déjà envoyée.
+     * Modes disponibles :
+     * - 'failed_only' : uniquement les destinataires ayant échoué
+     * - 'all' : renvoi global à tous les destinataires avec protection anti-doublon
+     */
+    public function resend(Request $request, NotificationCampaign $campaign): JsonResponse
+    {
+        /** @var Restaurant $restaurant */
+        $restaurant = $request->user();
+
+        if ($campaign->restaurant_id !== $restaurant->id) {
+            abort(404);
+        }
+
+        if ($restaurant->isFcmSuspended()) {
+            $msg = 'Le service de notifications Push FCM de votre établissement est temporairement suspendu par l\'administration.';
+            if ($restaurant->fcm_suspension_reason) {
+                $msg .= " Motif : {$restaurant->fcm_suspension_reason}";
+            }
+
+            return response()->json([
+                'message' => $msg,
+                'fcm_suspended' => true,
+                'reason' => $restaurant->fcm_suspension_reason,
+            ], 403);
+        }
+
+        if ($campaign->status !== 'sent') {
+            return response()->json([
+                'message' => 'Seule une campagne déjà envoyée peut être renvoyée.',
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'mode' => ['required', 'string', 'in:all,failed_only'],
+        ]);
+
+        $mode = $validated['mode'];
+
+        if ($mode === 'failed_only') {
+            $clientIds = NotificationLog::where('notification_campaign_id', $campaign->id)
+                ->where('status', 'failed')
+                ->pluck('client_id')
+                ->unique()
+                ->values();
+
+            if ($clientIds->isEmpty()) {
+                return response()->json([
+                    'message' => 'Aucun destinataire en échec pour cette notification.',
+                ], 422);
+            }
+        } else {
+            // Protection anti-doublon : délai minimum de 5 minutes entre deux renvois globaux
+            if ($campaign->sent_at && $campaign->sent_at->diffInMinutes(now()) < 5) {
+                return response()->json([
+                    'message' => 'Cette notification a été envoyée il y a moins de 5 minutes. Patientez un court instant avant de pouvoir la renvoyer.',
+                ], 422);
+            }
+
+            $originalRecipients = $campaign->target['recipient_client_ids'] ?? [];
+            if (empty($originalRecipients)) {
+                return response()->json([
+                    'message' => 'Aucun destinataire enregistré sur cette campagne.',
+                ], 422);
+            }
+
+            $clientIds = collect($originalRecipients)->unique()->values();
+        }
+
+        $recipientsCount = $clientIds->count();
+        if ($restaurant->sms_credits < $recipientsCount) {
+            return response()->json([
+                'message' => "Crédits insuffisants : il vous faut {$recipientsCount} crédit(s) pour effectuer cet envoi.",
+            ], 422);
+        }
+
+        $restaurant->decrement('sms_credits', $recipientsCount);
+        $campaign->update(['sent_at' => now()]);
+
+        foreach ($clientIds as $clientId) {
+            SendCampaignNotification::dispatch($campaign->id, (int) $clientId);
+        }
+
+        return response()->json([
+            'message' => "Notification renvoyée avec succès à {$recipientsCount} client(s).",
+            'recipients_count' => $recipientsCount,
+            'campaign' => $this->campaignData($campaign->fresh()),
+        ]);
     }
 
     private function campaignData(NotificationCampaign $campaign): array

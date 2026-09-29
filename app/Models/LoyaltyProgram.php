@@ -27,6 +27,18 @@ class LoyaltyProgram extends Model
         ];
     }
 
+    /**
+     * Accesseur pour config : résout dynamiquement l'URL du logo.
+     */
+    public function getConfigAttribute($value): array
+    {
+        $config = is_array($value) ? $value : (json_decode($value ?? '{}', true) ?: []);
+        if (! empty($config['logo_url'])) {
+            $config['logo_url'] = \App\Support\StorageUrlResolver::resolve($config['logo_url']);
+        }
+        return $config;
+    }
+
     public function restaurant()
     {
         return $this->belongsTo(Restaurant::class);

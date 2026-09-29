@@ -14,37 +14,82 @@ class PaymentTransactionResource extends Resource
 {
     protected static ?string $model = PaymentTransaction::class;
 
-    protected static ?string $navigationGroup = 'Finance & Abonnements';
+    protected static ?string $navigationGroup = 'Finance';
 
     protected static ?string $navigationIcon = 'heroicon-o-currency-dollar';
 
-    protected static ?string $navigationLabel = 'Transactions FedaPay';
+    protected static ?string $navigationLabel = 'Paiements';
 
     protected static ?string $pluralModelLabel = 'Transactions FedaPay';
 
     protected static ?string $modelLabel = 'Transaction FedaPay';
 
+    protected static ?int $navigationSort = 3;
+
+    /**
+     * Temporairement indisponible : FedaPay désactivé.
+     * Conserve le code pour réactivation ultérieure sans suppression.
+     */
+    public static function canAccess(): bool
+    {
+        return false;
+    }
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        return false;
+    }
+
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
-                Forms\Components\TextInput::make('restaurant_subscription_id')
-                    ->required()
-                    ->numeric(),
-                Forms\Components\TextInput::make('fedapay_transaction_id')
-                    ->maxLength(255),
-                Forms\Components\TextInput::make('fedapay_reference')
-                    ->maxLength(255),
-                Forms\Components\TextInput::make('amount_xof')
-                    ->required()
-                    ->numeric(),
-                Forms\Components\TextInput::make('mode')
-                    ->maxLength(255),
-                Forms\Components\TextInput::make('status')
-                    ->required()
-                    ->maxLength(255)
-                    ->default('pending'),
-                Forms\Components\TextInput::make('raw_payload'),
+                Forms\Components\Section::make('Détails du Paiement Marchand')
+                    ->schema([
+                        Forms\Components\Grid::make(3)
+                            ->schema([
+                                Forms\Components\Select::make('restaurant_subscription_id')
+                                    ->label('Abonnement Concerné')
+                                    ->relationship('subscription', 'id')
+                                    ->getOptionLabelFromRecordUsing(fn ($record) => "{$record->restaurant?->name} - {$record->plan?->name}")
+                                    ->searchable()
+                                    ->preload()
+                                    ->required(),
+
+                                Forms\Components\TextInput::make('fedapay_reference')
+                                    ->label('Référence FedaPay')
+                                    ->maxLength(255),
+
+                                Forms\Components\TextInput::make('fedapay_transaction_id')
+                                    ->label('ID Transaction FedaPay')
+                                    ->maxLength(255),
+                            ]),
+
+                        Forms\Components\Grid::make(3)
+                            ->schema([
+                                Forms\Components\TextInput::make('amount_xof')
+                                    ->label('Montant (FCFA)')
+                                    ->numeric()
+                                    ->suffix('FCFA')
+                                    ->required(),
+
+                                Forms\Components\TextInput::make('mode')
+                                    ->label('Moyen de Paiement')
+                                    ->placeholder('Ex: mtn, moov, carte')
+                                    ->maxLength(255),
+
+                                Forms\Components\Select::make('status')
+                                    ->label('Statut')
+                                    ->options([
+                                        'approved' => 'Validée / Payée',
+                                        'pending' => 'En attente',
+                                        'declined' => 'Refusée',
+                                        'canceled' => 'Annulée',
+                                    ])
+                                    ->default('pending')
+                                    ->required(),
+                            ]),
+                    ]),
             ]);
     }
 
@@ -52,31 +97,58 @@ class PaymentTransactionResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('restaurant_subscription_id')
-                    ->numeric()
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('fedapay_transaction_id')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('fedapay_reference')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('amount_xof')
-                    ->numeric()
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('mode')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('status')
-                    ->searchable(),
                 Tables\Columns\TextColumn::make('created_at')
-                    ->dateTime()
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
-                Tables\Columns\TextColumn::make('updated_at')
-                    ->dateTime()
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->label('Date & Heure')
+                    ->dateTime('d/m/Y H:i')
+                    ->sortable(),
+
+                Tables\Columns\TextColumn::make('fedapay_reference')
+                    ->label('Référence FedaPay')
+                    ->searchable()
+                    ->copyable()
+                    ->copyMessage('Référence copiée')
+                    ->weight('bold'),
+
+                Tables\Columns\TextColumn::make('subscription.restaurant.name')
+                    ->label('Établissement')
+                    ->searchable()
+                    ->weight('semibold'),
+
+                Tables\Columns\TextColumn::make('amount_xof')
+                    ->label('Montant')
+                    ->formatStateUsing(fn ($state) => number_format($state, 0, ',', ' ').' FCFA')
+                    ->color('success')
+                    ->weight('bold')
+                    ->alignEnd()
+                    ->sortable(),
+
+                Tables\Columns\TextColumn::make('mode')
+                    ->label('Mode')
+                    ->badge()
+                    ->color('info')
+                    ->formatStateUsing(fn ($state) => strtoupper((string) $state))
+                    ->searchable(),
+
+                Tables\Columns\TextColumn::make('status')
+                    ->label('Statut')
+                    ->badge()
+                    ->color(fn (string $state): string => match ($state) {
+                        'approved' => 'success',
+                        'pending' => 'warning',
+                        'declined', 'canceled' => 'danger',
+                        default => 'gray',
+                    })
+                    ->sortable(),
             ])
+            ->defaultSort('created_at', 'desc')
             ->filters([
-                //
+                Tables\Filters\SelectFilter::make('status')
+                    ->label('Statut')
+                    ->options([
+                        'approved' => 'Validée',
+                        'pending' => 'En attente',
+                        'declined' => 'Refusée',
+                    ]),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
@@ -85,14 +157,15 @@ class PaymentTransactionResource extends Resource
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
-            ]);
+            ])
+            ->emptyStateHeading('Aucune transaction financière')
+            ->emptyStateDescription('Les paiements d\'abonnement via FedaPay s\'afficheront ici.')
+            ->emptyStateIcon('heroicon-o-currency-dollar');
     }
 
     public static function getRelations(): array
     {
-        return [
-            //
-        ];
+        return [];
     }
 
     public static function getPages(): array

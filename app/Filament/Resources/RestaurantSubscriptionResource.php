@@ -14,48 +14,95 @@ class RestaurantSubscriptionResource extends Resource
 {
     protected static ?string $model = RestaurantSubscription::class;
 
-    protected static ?string $navigationGroup = 'Finance & Abonnements';
+    protected static ?string $navigationGroup = 'Finance';
 
     protected static ?string $navigationIcon = 'heroicon-o-banknotes';
 
-    protected static ?string $navigationLabel = 'Abonnements Restos';
+    protected static ?string $navigationLabel = 'Abonnements';
 
-    protected static ?string $pluralModelLabel = 'Abonnements Restaurants';
+    protected static ?string $pluralModelLabel = 'Abonnements Établissements';
 
-    protected static ?string $modelLabel = 'Abonnement Restaurant';
+    protected static ?string $modelLabel = 'Abonnement Établissement';
+
+    protected static ?int $navigationSort = 2;
+
+    /**
+     * Temporairement indisponible : Abonnements / FedaPay désactivés.
+     * Conserve le code pour réactivation ultérieure sans suppression.
+     */
+    public static function canAccess(): bool
+    {
+        return false;
+    }
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        return false;
+    }
 
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
-                Forms\Components\Select::make('restaurant_id')
-                    ->relationship('restaurant', 'name')
-                    ->searchable()
-                    ->required(),
-                Forms\Components\Select::make('plan_id')
-                    ->relationship('plan', 'name')
-                    ->searchable(),
-                Forms\Components\Select::make('status')
-                    ->options([
-                        'active' => 'Actif',
-                        'pending' => 'En attente',
-                        'canceled' => 'Annulé',
-                        'expired' => 'Expiré',
-                    ])
-                    ->default('active')
-                    ->required(),
-                Forms\Components\Select::make('billing_cycle')
-                    ->options([
-                        'monthly' => 'Mensuel',
-                        'yearly' => 'Annuel',
-                    ])
-                    ->default('monthly')
-                    ->required(),
-                Forms\Components\DateTimePicker::make('starts_at'),
-                Forms\Components\DateTimePicker::make('ends_at'),
-                Forms\Components\DateTimePicker::make('canceled_at'),
-                Forms\Components\TextInput::make('payment_reference')
-                    ->maxLength(255),
+                Forms\Components\Section::make('Détails de l\'Abonnement')
+                    ->schema([
+                        Forms\Components\Grid::make(2)
+                            ->schema([
+                                Forms\Components\Select::make('restaurant_id')
+                                    ->label('Établissement')
+                                    ->relationship('restaurant', 'name')
+                                    ->getOptionLabelFromRecordUsing(fn ($record): string => (string) ($record->name ?: "Établissement #{$record->id} (" . ($record->email ?: 'Sans nom') . ")"))
+                                    ->searchable()
+                                    ->preload()
+                                    ->required(),
+
+                                Forms\Components\Select::make('plan_id')
+                                    ->label('Formule')
+                                    ->relationship('plan', 'name')
+                                    ->searchable()
+                                    ->preload()
+                                    ->required(),
+                            ]),
+
+                        Forms\Components\Grid::make(3)
+                            ->schema([
+                                Forms\Components\Select::make('status')
+                                    ->label('Statut')
+                                    ->options([
+                                        'active' => 'Actif',
+                                        'pending' => 'En attente',
+                                        'canceled' => 'Annulé',
+                                        'expired' => 'Expiré',
+                                    ])
+                                    ->default('active')
+                                    ->required(),
+
+                                Forms\Components\Select::make('billing_cycle')
+                                    ->label('Périodicité')
+                                    ->options([
+                                        'monthly' => 'Mensuel',
+                                        'yearly' => 'Annuel',
+                                    ])
+                                    ->default('monthly')
+                                    ->required(),
+
+                                Forms\Components\TextInput::make('payment_reference')
+                                    ->label('Réf. Paiement')
+                                    ->maxLength(255),
+                            ]),
+
+                        Forms\Components\Grid::make(3)
+                            ->schema([
+                                Forms\Components\DateTimePicker::make('starts_at')
+                                    ->label('Début'),
+
+                                Forms\Components\DateTimePicker::make('ends_at')
+                                    ->label('Fin / Renouvellement'),
+
+                                Forms\Components\DateTimePicker::make('canceled_at')
+                                    ->label('Date d\'Annulation'),
+                            ]),
+                    ]),
             ]);
     }
 
@@ -64,40 +111,69 @@ class RestaurantSubscriptionResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('restaurant.name')
-                    ->label('Restaurant')
+                    ->label('Établissement')
+                    ->weight('bold')
                     ->searchable()
                     ->sortable(),
+
                 Tables\Columns\TextColumn::make('plan.name')
-                    ->label('Plan')
+                    ->label('Formule')
+                    ->badge()
+                    ->color('primary')
                     ->sortable(),
+
                 Tables\Columns\TextColumn::make('status')
+                    ->label('Statut')
                     ->badge()
                     ->color(fn (string $state): string => match ($state) {
                         'active' => 'success',
                         'pending' => 'warning',
-                        'canceled' => 'danger',
+                        'canceled', 'expired' => 'danger',
                         default => 'gray',
                     })
                     ->sortable(),
+
                 Tables\Columns\TextColumn::make('billing_cycle')
+                    ->label('Cycle')
+                    ->badge()
+                    ->color('gray')
+                    ->formatStateUsing(fn ($state) => match ($state) {
+                        'monthly' => 'Mensuel',
+                        'yearly' => 'Annuel',
+                        default => $state,
+                    })
                     ->sortable(),
+
                 Tables\Columns\TextColumn::make('starts_at')
-                    ->dateTime()
+                    ->label('Début')
+                    ->dateTime('d/m/Y')
                     ->sortable(),
+
                 Tables\Columns\TextColumn::make('ends_at')
-                    ->dateTime()
+                    ->label('Échéance')
+                    ->dateTime('d/m/Y')
                     ->sortable(),
-                Tables\Columns\TextColumn::make('created_at')
-                    ->dateTime()
-                    ->sortable()
+
+                Tables\Columns\TextColumn::make('payment_reference')
+                    ->label('Réf.')
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
+            ->defaultSort('created_at', 'desc')
             ->filters([
                 Tables\Filters\SelectFilter::make('status')
+                    ->label('Statut')
                     ->options([
                         'active' => 'Actif',
                         'pending' => 'En attente',
                         'canceled' => 'Annulé',
+                        'expired' => 'Expiré',
+                    ]),
+
+                Tables\Filters\SelectFilter::make('billing_cycle')
+                    ->label('Cycle')
+                    ->options([
+                        'monthly' => 'Mensuel',
+                        'yearly' => 'Annuel',
                     ]),
             ])
             ->actions([
@@ -107,7 +183,10 @@ class RestaurantSubscriptionResource extends Resource
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
-            ]);
+            ])
+            ->emptyStateHeading('Aucun abonnement actif')
+            ->emptyStateDescription('Les souscriptions souscrites par les marchands apparaîtront ici.')
+            ->emptyStateIcon('heroicon-o-banknotes');
     }
 
     public static function getRelations(): array

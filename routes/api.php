@@ -1,12 +1,15 @@
 <?php
 
+use App\Http\Controllers\Api\ClientAdvertisementController;
 use App\Http\Controllers\Api\ClientAuthController;
+use App\Http\Controllers\Api\ClientProximityController;
 use App\Http\Controllers\Api\LoyaltyCardController;
 use App\Http\Controllers\Api\LoyaltyProgramController;
 use App\Http\Controllers\Api\LoyaltyRewardController;
 use App\Http\Controllers\Api\MerchantCampaignController;
 use App\Http\Controllers\Api\MerchantDashboardController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\ProximitySettingsController;
 use App\Http\Controllers\Api\ReferralController;
 use App\Http\Controllers\Api\RestaurantAuthController;
 use App\Http\Controllers\Api\ReviewController;
@@ -110,10 +113,14 @@ Route::middleware(['auth:sanctum', 'staff.active'])->prefix('merchant')->group(f
     Route::get('/campaigns/{campaign}', [MerchantCampaignController::class, 'show'])->middleware('admin.only');
     Route::post('/campaigns', [MerchantCampaignController::class, 'store'])->middleware('admin.only');
     Route::post('/campaigns/{campaign}/archive', [MerchantCampaignController::class, 'archive'])->middleware('admin.only');
+    Route::delete('/campaigns/{campaign}', [MerchantCampaignController::class, 'destroy'])->middleware('admin.only');
     Route::put('/campaigns/{campaign}', [MerchantCampaignController::class, 'update'])->middleware('admin.only');
+    Route::post('/campaigns/{campaign}/resend', [MerchantCampaignController::class, 'resend'])->middleware('admin.only');
 
     Route::get('/referrals', [ReferralController::class, 'forRestaurant'])->middleware('admin.only');
     Route::get('/reviews', [ReviewController::class, 'index'])->middleware('admin.only');
+    Route::get('/proximity-settings', [ProximitySettingsController::class, 'show'])->middleware('admin.only');
+    Route::put('/proximity-settings', [ProximitySettingsController::class, 'update'])->middleware('admin.only');
 
     Route::prefix('notifications')->group(function () {
         Route::get('/', [NotificationController::class, 'index']);
@@ -138,6 +145,12 @@ Route::middleware('auth:sanctum')->get('/referrals', [ReferralController::class,
 
 Route::middleware('auth:sanctum')->post('/reviews', [ReviewController::class, 'store']);
 
+Route::middleware('auth:sanctum')->post('/client/location/proximity-check', [ClientProximityController::class, 'check'])->middleware('throttle:60,1');
+
+// Espace publicitaire client (public, throttle anti-scraping)
+Route::get('/advertisements', [ClientAdvertisementController::class, 'index'])->middleware('throttle:60,1');
+Route::get('/client/advertisements', [ClientAdvertisementController::class, 'index'])->middleware('throttle:60,1');
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Autres routes existantes
 // ─────────────────────────────────────────────────────────────────────────────
@@ -159,7 +172,18 @@ Route::post('/webhooks/fedapay', [FedaPayWebhookController::class, 'handle']);
 // Route::post('/login', [AuthController::class, 'login']);
 
 Route::get('/user', function (Request $request) {
-    return $request->user();
+    $user = $request->user();
+    if (! $user) {
+        return response()->json(['message' => 'Non authentifié.'], 401);
+    }
+
+    return response()->json([
+        'id' => $user->id,
+        'type' => class_basename($user),
+        'name' => $user->name ?? trim(($user->first_name ?? '').' '.($user->last_name ?? '')),
+        'email' => $user->email ?? null,
+        'phone' => $user->phone ?? null,
+    ]);
 })->middleware('auth:sanctum');
 
 // use App\Http\Controllers\AuthController;
@@ -191,8 +215,10 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 });
 
-// Route d'administration pour ajouter un point (non protégée pour les besoins du test)
-Route::post('/customers/{customer}/add-point', [LoyaltyController::class, 'addPoint']);
+// ⚠️  SÉCURITÉ : route désactivée — était non protégée (aucun middleware).
+// Anciennement utilisée pour les tests ; le système actuel de fidélité
+// repose sur LoyaltyCard + MerchantDashboardController.
+// Route::post('/customers/{customer}/add-point', [LoyaltyController::class, 'addPoint']);
 
 Route::middleware('auth:sanctum')->post('/device-tokens', function (Request $request) {
     $request->validate(['token' => 'required|string']);
@@ -225,72 +251,15 @@ Route::middleware('auth:sanctum')->prefix('notifications')->group(function () {
     Route::delete('/', [NotificationController::class, 'destroyAll']);
 });
 
-Route::middleware('auth:sanctum')->post('/simulate', function (Request $request) {
-    $request->validate(['type' => 'required|string']);
-    $user = $request->user();
+// ⚠️  SÉCURITÉ : route /simulate désactivée.
+// Permettait à tout utilisateur authentifié d'envoyer des notifications FCM
+// à des topics globaux (all_users, vip_customers) et de déclencher des
+// commandes Artisan. Dangereuse en production.
+//
+// Si cette route est nécessaire pour les tests internes, la protéger avec
+// un guard super_admin ou un middleware dédié :
+// Route::middleware(['auth:super_admins'])->post('/simulate', ...);
 
-    if ($request->type === 'promo') {
-        foreach ($user->deviceTokens as $deviceToken) {
-            SendPromoNotification::dispatch(
-                $user->id,
-                $deviceToken->token,
-                ['title' => 'SUPER PROMO 💥', 'body' => 'Moins 50% sur votre commande !']
-            );
-        }
-    } elseif ($request->type === 'birthday') {
-        // Déclenche manuellement la logique anniversaire pour ce compte —
-        // ne fonctionne que pour un Client authentifié (seul `birthdate`
-        // existe sur ce modèle, pas sur `Restaurant`).
-        if ($user instanceof Client) {
-            $user->update(['birthdate' => now()->format('Y-m-d')]);
-        }
+// Redirection directe vers les réseaux sociaux des établissements
+Route::get('/r/{identifier}/{platform}', [\App\Http\Controllers\SocialRedirectController::class, 'redirect']);
 
-        Artisan::call('notifications:birthdays');
-    } elseif ($request->type === 'vip') {
-        // Send a notification to the 'vip_customers' topic
-        $fcm = app(FcmService::class);
-        $fcm->sendToTopic(
-            'vip_customers',
-            ['title' => 'Accès VIP 👑', 'body' => 'Soirée privée ce vendredi dans notre restaurant !'],
-            ['type' => 'promo']
-        );
-    } elseif ($request->type === 'login_confirmation') {
-        foreach ($user->deviceTokens as $deviceToken) {
-            SendPromoNotification::dispatch(
-                $user->id,
-                $deviceToken->token,
-                ['title' => 'Connexion réussie ✅', 'body' => 'Heureux de vous revoir !']
-            );
-        }
-    } elseif ($request->type === 'online_only') {
-        $fcm = app(FcmService::class);
-        $fcm->sendToTopic(
-            'all_users',
-            [], // Empty notification array means it's a silent data message
-            ['type' => 'online_only', 'message' => 'Alerte in-app : Message pour tous les connectés !']
-        );
-    } elseif ($request->type === 'all_users') {
-        $fcm = app(FcmService::class);
-        $fcm->sendToTopic(
-            'all_users',
-            ['title' => 'Mise à jour pour tous 📢', 'body' => 'Découvrez nos nouveautés !'],
-            ['type' => 'promo']
-        );
-    } elseif ($request->type === 'points_gt_10') {
-        User::where('loyalty_points', '>', 10)
-            ->whereHas('deviceTokens')
-            ->chunk(200, function ($users) {
-                foreach ($users as $u) {
-                    foreach ($u->deviceTokens as $deviceToken) {
-                        SendPromoNotification::dispatch(
-                            $u->id,
-                            $deviceToken->token,
-                            ['title' => 'Client Fidèle 🌟', 'body' => "Vos {$u->loyalty_points} points vous donnent droit à un cadeau !"]
-                        );
-                    }
-                }
-            });
-    }
-
-    return response()->json(['success' => true]);
-});

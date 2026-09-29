@@ -493,6 +493,21 @@ class MerchantDashboardController extends Controller
         $percentage = (float) ($program->config['cashback_percentage'] ?? 0);
         $earnedFcfa = round($amountFcfa * $percentage / 100, 2);
 
+        $idempotencyKey = $request->input('idempotency_key');
+        if ($idempotencyKey) {
+            $existing = DB::table('loyalty_transactions')
+                ->where('loyalty_card_id', $loyaltyCard->id)
+                ->where('meta', 'like', '%"idempotency_key":"' . $idempotencyKey . '"%')
+                ->first();
+            if ($existing) {
+                return response()->json([
+                    'message' => 'Transaction déjà traitée.',
+                    'client' => $this->cardData($loyaltyCard->fresh()->load(['client', 'loyaltyProgram'])),
+                    'cashback_earned' => (float) $existing->value,
+                ]);
+            }
+        }
+
         $this->fraudDetectionService->validateAndThrowIfSuspicious(
             $loyaltyCard,
             $program,
@@ -513,8 +528,16 @@ class MerchantDashboardController extends Controller
         $balanceBefore = (float) $loyaltyCard->cashback_balance_fcfa;
 
         DB::transaction(function () use (
-            $loyaltyCard, $program, $tierService, $earnedFcfa, $amountFcfa, $tiers, $restaurantId, $staffUserId, $balanceBefore, &$createdRewardIds,
+            $loyaltyCard, $program, $tierService, $earnedFcfa, $amountFcfa, $tiers, $restaurantId, $staffUserId, $balanceBefore, $idempotencyKey, &$createdRewardIds,
         ) {
+            $cashbackMeta = [
+                'before' => $balanceBefore,
+                'after' => $balanceBefore + $earnedFcfa,
+            ];
+            if ($idempotencyKey) {
+                $cashbackMeta['idempotency_key'] = $idempotencyKey;
+            }
+
             DB::table('loyalty_transactions')->insert([
                 'loyalty_card_id' => $loyaltyCard->id,
                 'type' => 'cashback_earn',
@@ -523,10 +546,7 @@ class MerchantDashboardController extends Controller
                 'validation_method' => 'merchant_app',
                 'status' => 'valid',
                 'staff_user_id' => $staffUserId,
-                'meta' => json_encode([
-                    'before' => $balanceBefore,
-                    'after' => $balanceBefore + $earnedFcfa,
-                ]),
+                'meta' => json_encode($cashbackMeta),
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
@@ -1017,6 +1037,22 @@ class MerchantDashboardController extends Controller
             }
         }
 
+        $idempotencyKey = $request->input('idempotency_key');
+        if ($idempotencyKey) {
+            $existing = DB::table('loyalty_transactions')
+                ->where('loyalty_card_id', $loyaltyCard->id)
+                ->where('meta', 'like', '%"idempotency_key":"' . $idempotencyKey . '"%')
+                ->first();
+            if ($existing) {
+                return response()->json([
+                    'message' => 'Transaction déjà traitée.',
+                    'client' => $this->cardData($loyaltyCard->fresh()->load(['client', 'loyaltyProgram'])),
+                    'points_earned' => (int) $existing->value,
+                    'reward_unlocked' => false,
+                ]);
+            }
+        }
+
         $this->fraudDetectionService->validateAndThrowIfSuspicious(
             $loyaltyCard,
             $program,
@@ -1101,7 +1137,7 @@ class MerchantDashboardController extends Controller
         DB::transaction(function () use (
             $loyaltyCard, $progress, $before, $current, $rewardUnlocked, $unlockedTiers,
             $cardCompleted, $fullCyclesCompleted, $cycleGoal, $maxLevelUpdate,
-            $earned, $amountFcfa, $restaurantId, $staffUserId, &$createdRewardIds,
+            $earned, $amountFcfa, $restaurantId, $staffUserId, $idempotencyKey, &$createdRewardIds,
         ) {
             $loyaltyCard->update(array_merge(
                 [
@@ -1122,6 +1158,11 @@ class MerchantDashboardController extends Controller
             // cycle/boucle en sens inverse. `meta.cycles` journalise les
             // cycles franchis par CE gain : removeStamp annulera exactement
             // autant de lignes `cycle_completed` et décrémentera le compteur.
+            $stampMeta = ['before' => $before, 'after' => $current, 'cycles' => $fullCyclesCompleted];
+            if ($idempotencyKey) {
+                $stampMeta['idempotency_key'] = $idempotencyKey;
+            }
+
             $stampTransactionId = DB::table('loyalty_transactions')->insertGetId([
                 'loyalty_card_id' => $loyaltyCard->id,
                 'type' => 'stamp',
@@ -1130,7 +1171,7 @@ class MerchantDashboardController extends Controller
                 'validation_method' => 'merchant_app',
                 'status' => 'valid',
                 'staff_user_id' => $staffUserId,
-                'meta' => json_encode(['before' => $before, 'after' => $current, 'cycles' => $fullCyclesCompleted]),
+                'meta' => json_encode($stampMeta),
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
@@ -1377,6 +1418,66 @@ class MerchantDashboardController extends Controller
             ->whereDate('created_at', now()->toDateString())
             ->selectRaw("COALESCE(SUM(CASE WHEN type = 'stamp' THEN 1 ELSE -1 END), 0) as total")
             ->value('total'));
+        if ($stampsToday < 0) {
+            $stampsToday = 0;
+        }
+
+        $startOfMonth = now()->startOfMonth();
+        $endOfMonth = now()->endOfMonth();
+
+        $stampsThisMonth = (int) (DB::table('loyalty_transactions')
+            ->whereIn('loyalty_card_id', $cardIds)
+            ->whereIn('type', ['stamp', 'stamp_reversal'])
+            ->where('status', 'valid')
+            ->whereBetween('created_at', [$startOfMonth, $endOfMonth])
+            ->selectRaw("COALESCE(SUM(CASE WHEN type = 'stamp' THEN 1 ELSE -1 END), 0) as total")
+            ->value('total'));
+        if ($stampsThisMonth < 0) {
+            $stampsThisMonth = 0;
+        }
+
+        // Activité hebdomadaire réelle du mois en cours (semaines 1 à 4)
+        $w1 = (int) (DB::table('loyalty_transactions')
+            ->whereIn('loyalty_card_id', $cardIds)
+            ->where('type', 'stamp')
+            ->where('status', 'valid')
+            ->whereBetween('created_at', [
+                $startOfMonth->copy(),
+                $startOfMonth->copy()->addDays(6)->endOfDay(),
+            ])
+            ->count());
+
+        $w2 = (int) (DB::table('loyalty_transactions')
+            ->whereIn('loyalty_card_id', $cardIds)
+            ->where('type', 'stamp')
+            ->where('status', 'valid')
+            ->whereBetween('created_at', [
+                $startOfMonth->copy()->addDays(7)->startOfDay(),
+                $startOfMonth->copy()->addDays(13)->endOfDay(),
+            ])
+            ->count());
+
+        $w3 = (int) (DB::table('loyalty_transactions')
+            ->whereIn('loyalty_card_id', $cardIds)
+            ->where('type', 'stamp')
+            ->where('status', 'valid')
+            ->whereBetween('created_at', [
+                $startOfMonth->copy()->addDays(14)->startOfDay(),
+                $startOfMonth->copy()->addDays(20)->endOfDay(),
+            ])
+            ->count());
+
+        $w4 = (int) (DB::table('loyalty_transactions')
+            ->whereIn('loyalty_card_id', $cardIds)
+            ->where('type', 'stamp')
+            ->where('status', 'valid')
+            ->whereBetween('created_at', [
+                $startOfMonth->copy()->addDays(21)->startOfDay(),
+                $endOfMonth,
+            ])
+            ->count());
+
+        $weeklyActivity = [$w1, $w2, $w3, $w4];
 
         $recent = LoyaltyCard::query()
             ->with('client')
@@ -1434,6 +1535,8 @@ class MerchantDashboardController extends Controller
         return response()->json([
             'total_clients' => $cardIds->count(),
             'stamps_today' => $stampsToday,
+            'stamps_this_month' => $stampsThisMonth,
+            'weekly_activity' => $weeklyActivity,
             'active_rewards' => LoyaltyCard::whereIn('id', $cardIds)
                 ->where('status', 'reward_available')
                 ->count(),

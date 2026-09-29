@@ -12,6 +12,13 @@ class FedaPayWebhookController extends Controller
 {
     public function handle(Request $request)
     {
+        $allowedIps = config('fedapay.allowed_ips', []);
+        if (! empty($allowedIps) && ! in_array($request->ip(), $allowedIps, true)) {
+            Log::warning("Webhook FedaPay : tentative d'accès rejetée depuis IP non autorisée ({$request->ip()})");
+
+            return response()->json(['error' => 'forbidden ip'], 403);
+        }
+
         $payload = $request->getContent();
         $signature = $request->header('X-FEDAPAY-SIGNATURE');
         $secret = config('fedapay.webhook_secret');

@@ -29,15 +29,9 @@ class DispatchScheduledCampaigns extends Command
             $clientIds = collect($campaign->target['recipient_client_ids'] ?? []);
             $restaurant = $campaign->restaurant;
 
-            // Le plafond quotidien peut avoir été atteint entre-temps par
-            // d'autres campagnes du même commerce : on ne dépasse jamais la
-            // limite, on repousse simplement à l'ouverture du lendemain.
-            if (! $restaurant || $clientIds->count() > $throttle->remainingToday($restaurant)) {
-                // `nextWindowStart()` (sans argument = depuis maintenant) : si on
-                // est déjà dans la plage (cas normal ici, cette commande ne
-                // tourne que pendant les heures d'envoi), elle renvoie demain
-                // 8h — jamais aujourd'hui, sinon la même campagne repasserait
-                // due dans la minute et re-dépasserait le plafond en boucle.
+            // Si l'établissement n'existe plus, ou si son service FCM est suspendu par l'administration,
+            // ou si le plafond quotidien est atteint : on bloque l'envoi et on repousse au prochain créneau.
+            if (! $restaurant || $restaurant->isFcmSuspended() || $clientIds->count() > $throttle->remainingToday($restaurant)) {
                 $campaign->update(['scheduled_at' => $throttle->nextWindowStart()]);
                 $deferred++;
 

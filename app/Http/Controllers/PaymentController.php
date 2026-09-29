@@ -13,6 +13,13 @@ class PaymentController extends Controller
 {
     public function initSubscriptionPayment(Request $request, SubscriptionPlan $plan)
     {
+        // Service FedaPay temporairement indisponible
+        return response()->json([
+            'message' => 'Le service de paiement et d\'abonnement est temporairement indisponible.',
+            'status' => 'temporarily_unavailable',
+        ], 503);
+
+        // Code conservé pour réactivation ultérieure :
         // adapte selon ta relation user -> restaurant
         // Here we create a mock restaurant for the user if it doesn't exist
         $restaurant = Restaurant::firstOrCreate(['name' => $request->user()->name.' Restaurant']);

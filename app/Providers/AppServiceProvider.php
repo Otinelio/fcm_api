@@ -15,7 +15,12 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // En mode CLI / tests (utilisateur othnelio), isoler le cache des vues Blade
+        // dans storage/framework/views_cli pour ne jamais entrer en conflit de propriété
+        // de fichiers (POSIX utime/touch) avec le serveur Web Apache/Nginx (utilisateur www-data).
+        if ($this->app->runningInConsole()) {
+            config(['view.compiled' => storage_path('framework/views_cli')]);
+        }
     }
 
     /**

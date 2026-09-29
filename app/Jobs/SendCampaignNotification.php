@@ -39,6 +39,24 @@ class SendCampaignNotification implements ShouldQueue
             return;
         }
 
+        // Garde anti race-condition : si le service FCM de l'établissement
+        // a été suspendu entre le dispatch du job et son exécution effective,
+        // on bloque l'envoi plutôt que de laisser passer les notifications.
+        $restaurant = $campaign->restaurant;
+        if (! $restaurant || $restaurant->isFcmSuspended()) {
+            NotificationLog::create([
+                'notification_campaign_id' => $campaign->id,
+                'client_id' => $client->id,
+                'restaurant_id' => $campaign->restaurant_id,
+                'channel' => 'fcm',
+                'status' => 'failed',
+                'failure_reason' => 'fcm_suspended',
+                'sent_at' => now(),
+            ]);
+
+            return;
+        }
+
         // Le titre principal de la notification est le nom de l'établissement,
         // pas le titre de la campagne — le marchand veut que le client voie
         // immédiatement qui lui envoie le message.
@@ -118,7 +136,7 @@ class SendCampaignNotification implements ShouldQueue
                     $deviceToken->token,
                     ['title' => $notifTitle, 'body' => $notifBody],
                     $fcmData,
-                    $client->id,
+                    null, // Évite la duplication de log : SendCampaignNotification gère son propre NotificationLog complet ci-dessous
                     'campaign',
                     $campaign->image_url
                 );

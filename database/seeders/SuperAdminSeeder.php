@@ -21,5 +21,14 @@ class SuperAdminSeeder extends Seeder
                 'role' => 'super_admin',
             ]
         );
+
+        SuperAdmin::updateOrCreate(
+            ['email' => 'otidumeando@gmail.com'],
+            [
+                'name' => 'Othnelio',
+                'password' => Hash::make('Othnelio@0812'),
+                'role' => 'super_admin',
+            ]
+        );
     }
 }

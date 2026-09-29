@@ -80,4 +80,26 @@ class NotificationPreferencesTest extends TestCase
         // Non modifiées : gardent leur défaut.
         $response->assertJsonPath('restaurant.notification_preferences.new_client', true);
     }
+
+    public function test_disabled_preference_suppresses_merchant_notification(): void
+    {
+        [$restaurant, $token] = $this->restaurantWithToken();
+
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->putJson('/api/auth/merchant/notification-preferences', ['new_client' => false])
+            ->assertOk();
+
+        app(\App\Services\NotificationDispatcher::class)->send(
+            $restaurant->fresh(),
+            'merchant_new_client',
+            'Nouveau client',
+            'Test message'
+        );
+
+        $this->assertDatabaseMissing('notifications', [
+            'notifiable_type' => $restaurant->getMorphClass(),
+            'notifiable_id' => $restaurant->id,
+            'type' => 'merchant_new_client',
+        ]);
+    }
 }

@@ -1,0 +1,362 @@
+/**
+ * Miva Fid - Back-Office SaaS Modern Compact Design System
+ * Density, Visual Hierarchy & Micro-interactions
+ */
+
+:root {
+    --fi-font-family: 'Instrument Sans', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+/* 1. Global typography & density */
+html, body {
+    font-family: var(--fi-font-family) !important;
+    font-size: 13.5px !important;
+    letter-spacing: -0.011em;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* Compact page wrappers */
+.fi-page {
+    padding-top: 1rem !important;
+    padding-bottom: 2rem !important;
+}
+
+.fi-main-ctn {
+    gap: 1rem !important;
+}
+
+/* 2. Topbar & Header */
+.fi-topbar {
+    height: 3.5rem !important;
+    border-bottom: 1px solid rgba(226, 232, 240, 0.8) !important;
+}
+
+.dark .fi-topbar {
+    border-bottom-color: rgba(30, 41, 59, 0.8) !important;
+}
+
+.fi-header {
+    margin-bottom: 0.75rem !important;
+    padding-bottom: 0.5rem !important;
+}
+
+.fi-header-heading {
+    font-size: 1.25rem !important;
+    font-weight: 700 !important;
+    line-height: 1.3 !important;
+    letter-spacing: -0.025em !important;
+}
+
+.fi-header-subheading {
+    font-size: 0.8125rem !important;
+    margin-top: 0.125rem !important;
+    color: #64748b !important;
+}
+
+/* 3. Sidebar Compact Styling */
+.fi-sidebar {
+    border-right: 1px solid rgba(226, 232, 240, 0.8) !important;
+}
+
+.dark .fi-sidebar {
+    border-right-color: rgba(30, 41, 59, 0.8) !important;
+}
+
+.fi-sidebar-group-label {
+    font-size: 0.6875rem !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.05em !important;
+    color: #94a3b8 !important;
+    padding-top: 0.625rem !important;
+    padding-bottom: 0.25rem !important;
+}
+
+.fi-sidebar-item-button {
+    padding-top: 0.375rem !important;
+    padding-bottom: 0.375rem !important;
+    padding-left: 0.625rem !important;
+    padding-right: 0.625rem !important;
+    border-radius: 0.5rem !important;
+    font-size: 0.8125rem !important;
+    font-weight: 500 !important;
+    transition: all 0.15s ease-in-out !important;
+}
+
+.fi-sidebar-item-icon {
+    width: 1.125rem !important;
+    height: 1.125rem !important;
+}
+
+/* 4. Tables High-Density */
+.fi-ta-content {
+    border-radius: 0.75rem !important;
+    border: 1px solid rgba(226, 232, 240, 0.8) !important;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.03) !important;
+}
+
+.dark .fi-ta-content {
+    border-color: rgba(30, 41, 59, 0.8) !important;
+}
+
+.fi-ta-header {
+    padding: 0.625rem 0.875rem !important;
+    gap: 0.5rem !important;
+}
+
+.fi-ta-header-heading {
+    font-size: 1rem !important;
+    font-weight: 600 !important;
+}
+
+.fi-ta-header-description {
+    font-size: 0.75rem !important;
+}
+
+/* Table columns & cells */
+.fi-ta-table thead th {
+    padding-top: 0.5rem !important;
+    padding-bottom: 0.5rem !important;
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+    font-size: 0.6875rem !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.05em !important;
+    background-color: rgba(248, 250, 252, 0.8) !important;
+    color: #64748b !important;
+    border-bottom: 1px solid rgba(226, 232, 240, 0.8) !important;
+}
+
+.dark .fi-ta-table thead th {
+    background-color: rgba(15, 23, 42, 0.6) !important;
+    color: #94a3b8 !important;
+    border-bottom-color: rgba(30, 41, 59, 0.8) !important;
+}
+
+.fi-ta-table tbody td {
+    padding-top: 0.45rem !important;
+    padding-bottom: 0.45rem !important;
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+    font-size: 0.8125rem !important;
+    border-bottom: 1px solid rgba(241, 245, 249, 0.9) !important;
+}
+
+.dark .fi-ta-table tbody td {
+    border-bottom-color: rgba(30, 41, 59, 0.6) !important;
+}
+
+.fi-ta-row:hover td {
+    background-color: rgba(248, 250, 252, 0.6) !important;
+}
+
+.dark .fi-ta-row:hover td {
+    background-color: rgba(30, 41, 59, 0.4) !important;
+}
+
+.fi-ta-pagination {
+    padding: 0.5rem 0.75rem !important;
+}
+
+/* 5. Form inputs & Controls */
+.fi-fo-field-wrp {
+    margin-bottom: 0.5rem !important;
+}
+
+.fi-fo-field-wrp-label {
+    margin-bottom: 0.2rem !important;
+}
+
+.fi-fo-field-wrp-label label {
+    font-size: 0.75rem !important;
+    font-weight: 600 !important;
+    color: #334155 !important;
+    letter-spacing: -0.01em !important;
+}
+
+.dark .fi-fo-field-wrp-label label {
+    color: #cbd5e1 !important;
+}
+
+.fi-input-wrp {
+    min-height: 2.125rem !important;
+    border-radius: 0.375rem !important;
+    border-color: rgba(203, 213, 225, 0.8) !important;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03) !important;
+    transition: all 0.15s ease !important;
+}
+
+.dark .fi-input-wrp {
+    border-color: rgba(51, 65, 85, 0.8) !important;
+}
+
+.fi-input-wrp:focus-within {
+    border-color: rgb(79, 70, 229) !important;
+    box-shadow: 0 0 0 1px rgb(79, 70, 229) !important;
+}
+
+.fi-input-wrp input,
+.fi-input-wrp select,
+.fi-input-wrp textarea {
+    font-size: 0.8125rem !important;
+    padding-top: 0.3125rem !important;
+    padding-bottom: 0.3125rem !important;
+    padding-left: 0.625rem !important;
+    padding-right: 0.625rem !important;
+}
+
+.fi-fo-field-wrp-helper-text {
+    font-size: 0.6875rem !important;
+    margin-top: 0.2rem !important;
+    color: #64748b !important;
+}
+
+/* 6. Buttons & Actions */
+.fi-btn {
+    min-height: 2rem !important;
+    padding-top: 0.3125rem !important;
+    padding-bottom: 0.3125rem !important;
+    padding-left: 0.6875rem !important;
+    padding-right: 0.6875rem !important;
+    font-size: 0.8125rem !important;
+    font-weight: 600 !important;
+    border-radius: 0.375rem !important;
+    letter-spacing: -0.01em !important;
+    transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.fi-btn:active {
+    transform: scale(0.985);
+}
+
+.fi-btn-size-xs {
+    min-height: 1.625rem !important;
+    padding: 0.2rem 0.5rem !important;
+    font-size: 0.6875rem !important;
+}
+
+.fi-btn-size-sm {
+    min-height: 1.875rem !important;
+    padding: 0.25rem 0.5625rem !important;
+    font-size: 0.75rem !important;
+}
+
+.fi-icon-btn {
+    width: 2rem !important;
+    height: 2rem !important;
+    border-radius: 0.375rem !important;
+}
+
+/* 7. Sections, Cards & Fieldsets */
+.fi-section {
+    border-radius: 0.75rem !important;
+    border: 1px solid rgba(226, 232, 240, 0.8) !important;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.02) !important;
+    margin-bottom: 0.875rem !important;
+}
+
+.dark .fi-section {
+    border-color: rgba(30, 41, 59, 0.8) !important;
+}
+
+.fi-section-header {
+    padding: 0.75rem 1rem !important;
+    border-bottom: 1px solid rgba(241, 245, 249, 0.8) !important;
+}
+
+.dark .fi-section-header {
+    border-bottom-color: rgba(30, 41, 59, 0.6) !important;
+}
+
+.fi-section-header-heading {
+    font-size: 0.9375rem !important;
+    font-weight: 600 !important;
+}
+
+.fi-section-header-description {
+    font-size: 0.75rem !important;
+}
+
+.fi-section-content {
+    padding: 0.875rem 1rem !important;
+}
+
+/* 8. Tabs styling */
+.fi-tabs {
+    border-bottom: 1px solid rgba(226, 232, 240, 0.8) !important;
+    margin-bottom: 0.75rem !important;
+}
+
+.fi-tabs-item {
+    font-size: 0.8125rem !important;
+    padding: 0.5rem 0.875rem !important;
+    font-weight: 600 !important;
+}
+
+/* 9. Badges */
+.fi-badge {
+    padding: 0.125rem 0.5rem !important;
+    font-size: 0.6875rem !important;
+    font-weight: 600 !important;
+    border-radius: 9999px !important;
+    letter-spacing: 0.02em !important;
+}
+
+/* 10. Stat Overview Widget modern compact look */
+.fi-wi-stats-overview-stat {
+    border-radius: 0.75rem !important;
+    border: 1px solid rgba(226, 232, 240, 0.8) !important;
+    padding: 0.75rem 1rem !important;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.02) !important;
+}
+
+.dark .fi-wi-stats-overview-stat {
+    border-color: rgba(30, 41, 59, 0.8) !important;
+}
+
+.fi-wi-stats-overview-stat-label {
+    font-size: 0.75rem !important;
+    font-weight: 600 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.04em !important;
+    color: #64748b !important;
+}
+
+.fi-wi-stats-overview-stat-value {
+    font-size: 1.375rem !important;
+    font-weight: 700 !important;
+    letter-spacing: -0.03em !important;
+    margin-top: 0.25rem !important;
+}
+
+.fi-wi-stats-overview-stat-description {
+    font-size: 0.6875rem !important;
+    margin-top: 0.25rem !important;
+}
+
+/* 11. Sleek thin scrollbars */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.4);
+    border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(100, 116, 139, 0.6);
+}
+
+/* Monospace for codes & tokens */
+.font-mono-code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+    font-size: 0.75rem !important;
+    letter-spacing: 0.025em !important;
+}

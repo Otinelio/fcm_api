@@ -33,6 +33,7 @@ class Client extends Authenticatable
     protected $hidden = [
         'password',
         'oauth_id',
+        'fcm_token',
     ];
 
     /**
@@ -47,6 +48,14 @@ class Client extends Authenticatable
             'birthdate' => 'date',
             'phone_verified_at' => 'datetime',
         ];
+    }
+
+    /**
+     * URL publique dynamique de l'avatar du client, résolue sur l'hôte HTTP courant.
+     */
+    public function getAvatarUrlAttribute(?string $value): ?string
+    {
+        return \App\Support\StorageUrlResolver::resolve($value);
     }
 
     // ─────────────────────────────────────────────────────────
@@ -104,7 +113,7 @@ class Client extends Authenticatable
 
     public function geoOptins()
     {
-        return $this->hasMany(ClientRestaurantGeoOptin::class ?? null, 'client_id');
+        return $this->hasMany(ClientRestaurantGeoOptin::class, 'client_id');
     }
 
     public function referralsMade()

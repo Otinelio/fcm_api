@@ -254,4 +254,72 @@ class AccountSettingsTest extends TestCase
 
         $this->assertDatabaseHas('staff_users', ['id' => $adminA->id, 'role' => 'operator']);
     }
+
+    public function test_social_profiles_are_saved_and_exposed(): void
+    {
+        [$restaurant, $token] = $this->adminToken();
+
+        $socialProfiles = [
+            'facebook' => [
+                'name' => 'Botega',
+                'link' => 'https://facebook.com/botega',
+            ],
+            'instagram' => [
+                'name' => 'Chic Coin',
+                'link' => 'chic_coin',
+            ],
+            'tiktok' => [
+                'name' => 'Chez X',
+                'link' => 'chez_x',
+            ],
+        ];
+
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->putJson('/api/auth/merchant/profile', [
+                ...array_merge($restaurant->only(['name', 'category']), ['phone' => '+22890000000']),
+                'social_profiles' => $socialProfiles,
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('restaurant.social_profiles.facebook.name', 'Botega')
+            ->assertJsonPath('restaurant.social_profiles.instagram.name', 'Chic Coin')
+            ->assertJsonPath('restaurant.social_profiles.tiktok.name', 'Chez X');
+
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson('/api/auth/merchant/me')
+            ->assertOk()
+            ->assertJsonPath('restaurant.social_profiles.facebook.name', 'Botega')
+            ->assertJsonPath('restaurant.social_profiles.instagram.name', 'Chic Coin')
+            ->assertJsonPath('restaurant.social_profiles.tiktok.name', 'Chez X');
+    }
+
+    public function test_handles_are_automatically_formatted_to_direct_urls(): void
+    {
+        [$restaurant, $token] = $this->adminToken();
+
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->putJson('/api/auth/merchant/profile', [
+                ...array_merge($restaurant->only(['name', 'category']), ['phone' => '+22890000000']),
+                'instagram' => '@chic_coin',
+                'facebook' => 'Botega',
+                'tiktok' => 'chez_x',
+                'whatsapp' => '+228 90 12 34 56',
+            ])
+            ->assertOk()
+            ->assertJsonPath('restaurant.social_profiles.instagram.url', 'https://instagram.com/chic_coin')
+            ->assertJsonPath('restaurant.social_profiles.facebook.url', 'https://facebook.com/Botega')
+            ->assertJsonPath('restaurant.social_profiles.tiktok.url', 'https://tiktok.com/@chez_x')
+            ->assertJsonPath('restaurant.social_profiles.whatsapp.url', 'https://wa.me/22890123456');
+
+        // Test de la redirection directe vers le réseau
+        $this->get("/r/{$restaurant->short_code}/instagram")
+            ->assertRedirect('https://instagram.com/chic_coin');
+
+        $this->get("/r/{$restaurant->short_code}/facebook")
+            ->assertRedirect('https://facebook.com/Botega');
+
+        $this->get("/r/{$restaurant->short_code}/tiktok")
+            ->assertRedirect('https://tiktok.com/@chez_x');
+    }
 }
+

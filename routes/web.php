@@ -27,7 +27,7 @@ Route::get('/legacy-admin', function () {
 // QR codes marchands à scanner pour tester le flux "rejoindre" — jamais
 // exposé hors local (les qr_token permettent de rejoindre n'importe quel
 // restaurant, à ne pas divulguer en prod).
-if (app()->environment('local')) {
-    Route::get('/debug/restaurants', [DebugQrController::class, 'index']);
-    Route::get('/debug/restaurants/{restaurant}/qr', [DebugQrController::class, 'qr']);
-}
+// Redirection directe vers les réseaux sociaux des établissements
+Route::get('/r/{identifier}/{platform}', [\App\Http\Controllers\SocialRedirectController::class, 'redirect'])
+    ->name('social.redirect');
+

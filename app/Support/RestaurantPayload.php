@@ -32,6 +32,7 @@ final class RestaurantPayload
             'instagram' => $restaurant->instagram,
             'facebook' => $restaurant->facebook,
             'tiktok' => $restaurant->tiktok,
+            'social_profiles' => $restaurant->formattedSocialProfiles(),
             'qr_token' => $restaurant->qr_token,
             'short_code' => $restaurant->short_code,
             'has_business_info' => $restaurant->hasBusinessInfo(),
@@ -64,6 +65,10 @@ final class RestaurantPayload
                 ...self::DEFAULT_NOTIFICATION_PREFERENCES,
                 ...$restaurant->notification_preferences ?? [],
             ],
+            'proximity_settings' => $restaurant->proximitySettings(),
+            'is_fcm_suspended' => $restaurant->isFcmSuspended(),
+            'fcm_suspension_reason' => $restaurant->fcm_suspension_reason,
+            'fcm_suspended_at' => $restaurant->fcm_suspended_at?->toIso8601String(),
             'created_at' => $restaurant->created_at?->toIso8601String(),
         ];
     }
