@@ -5,9 +5,11 @@
 *.apk
 .DS_Store
 .env
-.env.backup
-.env.production
-.env.testing
+.env.*
+!.env.example
+!.env.staging.example
+*.bak*
+*.backup
 .phpactor.json
 .phpunit.result.cache
 /.codex
