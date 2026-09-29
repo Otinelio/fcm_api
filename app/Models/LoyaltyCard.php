@@ -50,6 +50,22 @@ class LoyaltyCard extends Model
         ];
     }
 
+    protected ?array $memoizedTierResolution = null;
+    protected ?array $memoizedTiers = null;
+    protected ?float $memoizedCashbackAvailable = null;
+
+    /**
+     * Résolution mémorisée du palier pour éviter les résolutions redondantes.
+     */
+    public function resolveTier(): array
+    {
+        if ($this->memoizedTierResolution !== null) {
+            return $this->memoizedTierResolution;
+        }
+
+        return $this->memoizedTierResolution = app(LoyaltyTierService::class)->resolve($this);
+    }
+
     /**
      * Objectif du cycle actuel (Tampons/Achats) — `null` pour Cashback, qui
      * n'a pas de cycle. Avec des paliers multiples (`config['rewards']`), ce
@@ -65,7 +81,7 @@ class LoyaltyCard extends Model
         }
 
         $service = app(LoyaltyTierService::class);
-        $tiers = $service->tiers($program);
+        $tiers = $this->memoizedTiers ??= $service->tiers($program);
 
         if (count($tiers) <= 1) {
             // Mono-palier : comportement cycle répété inchangé — objectif
@@ -112,23 +128,34 @@ class LoyaltyCard extends Model
      */
     public function getCashbackAvailableFcfaAttribute(): float
     {
+        if ($this->memoizedCashbackAvailable !== null) {
+            return $this->memoizedCashbackAvailable;
+        }
+
         $raw = (float) $this->cashback_balance_fcfa;
         $expiryDays = $this->loyaltyProgram?->config['cashback_expiry_days'] ?? null;
         if (! $expiryDays || $raw <= 0) {
-            return $raw;
+            return $this->memoizedCashbackAvailable = $raw;
         }
 
-        $lastEarn = DB::table('loyalty_transactions')
-            ->where('loyalty_card_id', $this->id)
-            ->where('type', 'cashback_earn')
-            ->where('status', 'valid')
-            ->max('created_at');
+        $lastEarn = null;
+        if ($this->relationLoaded('lastCashbackEarnTransaction')) {
+            $lastEarn = $this->lastCashbackEarnTransaction?->created_at;
+        } elseif (array_key_exists('last_cashback_earn_at', $this->attributes)) {
+            $lastEarn = $this->attributes['last_cashback_earn_at'];
+        } else {
+            $lastEarn = DB::table('loyalty_transactions')
+                ->where('loyalty_card_id', $this->id)
+                ->where('type', 'cashback_earn')
+                ->where('status', 'valid')
+                ->max('created_at');
+        }
 
         if (! $lastEarn) {
-            return $raw;
+            return $this->memoizedCashbackAvailable = $raw;
         }
 
-        return Carbon::parse($lastEarn)->addDays((int) $expiryDays)->isPast() ? 0.0 : $raw;
+        return $this->memoizedCashbackAvailable = (Carbon::parse($lastEarn)->addDays((int) $expiryDays)->isPast() ? 0.0 : $raw);
     }
 
     /**
@@ -145,7 +172,7 @@ class LoyaltyCard extends Model
         }
 
         $service = app(LoyaltyTierService::class);
-        $tiers = $service->tiers($program);
+        $tiers = $this->memoizedTiers ??= $service->tiers($program);
 
         if ($program->type === 'cashback') {
             return $this->level['percent_to_next'] ?? 0;
@@ -168,7 +195,7 @@ class LoyaltyCard extends Model
     /** Niveau de fidélité — `null` tant que le programme n'a qu'un seul palier configuré (voir `LoyaltyTierService`). */
     public function getLevelAttribute(): ?array
     {
-        $resolved = app(LoyaltyTierService::class)->resolve($this);
+        $resolved = $this->resolveTier();
 
         if ($resolved['level_name'] === null && $resolved['tiers'] === []) {
             return null;
@@ -206,7 +233,7 @@ class LoyaltyCard extends Model
     /** Roadmap des paliers (vide si un seul palier configuré) — pour la vue "progression" côté client. */
     public function getTiersAttribute(): array
     {
-        return app(LoyaltyTierService::class)->resolve($this)['tiers'];
+        return $this->resolveTier()['tiers'];
     }
 
     /**
@@ -259,5 +286,18 @@ class LoyaltyCard extends Model
     public function loyaltyProgram()
     {
         return $this->belongsTo(LoyaltyProgram::class);
+    }
+
+    public function transactions()
+    {
+        return $this->hasMany(LoyaltyTransaction::class);
+    }
+
+    public function lastCashbackEarnTransaction()
+    {
+        return $this->hasOne(LoyaltyTransaction::class)
+            ->where('type', 'cashback_earn')
+            ->where('status', 'valid')
+            ->latestOfMany('created_at');
     }
 }

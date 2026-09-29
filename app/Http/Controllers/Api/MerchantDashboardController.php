@@ -54,7 +54,7 @@ class MerchantDashboardController extends Controller
         $restaurant = $this->restaurant($request);
 
         $query = LoyaltyCard::query()
-            ->with(['client', 'loyaltyProgram.tiers'])
+            ->with(['client', 'loyaltyProgram.tiers', 'lastCashbackEarnTransaction'])
             ->where('restaurant_id', $restaurant->id);
 
         if ($search = trim((string) $request->query('q', ''))) {

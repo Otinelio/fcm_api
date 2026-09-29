@@ -35,7 +35,7 @@ class LoyaltyCardController extends Controller
         $client = $request->user();
 
         $cards = $client->loyaltyCards()
-            ->with(['restaurant', 'loyaltyProgram'])
+            ->with(['restaurant', 'loyaltyProgram.tiers', 'lastCashbackEarnTransaction'])
             ->orderByDesc('created_at')
             ->get();
 

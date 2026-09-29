@@ -3,12 +3,14 @@
 use App\Http\Controllers\Api\ClientAdvertisementController;
 use App\Http\Controllers\Api\ClientAuthController;
 use App\Http\Controllers\Api\ClientProximityController;
+use App\Http\Controllers\Api\DeviceTokenController;
 use App\Http\Controllers\Api\LoyaltyCardController;
 use App\Http\Controllers\Api\LoyaltyProgramController;
 use App\Http\Controllers\Api\LoyaltyRewardController;
 use App\Http\Controllers\Api\MerchantCampaignController;
 use App\Http\Controllers\Api\MerchantDashboardController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\PingController;
 use App\Http\Controllers\Api\ProximitySettingsController;
 use App\Http\Controllers\Api\ReferralController;
 use App\Http\Controllers\Api\RestaurantAuthController;
@@ -166,36 +168,14 @@ Route::middleware('auth:sanctum')->post(
     RewardAckController::class
 );
 
-Route::get('/ping', function () {
-    return response()->json(['status' => 'ok']);
-});
+Route::get('/ping', PingController::class);
 
 Route::post('/webhooks/fedapay', [FedaPayWebhookController::class, 'handle']);
 
 // Paiement d'abonnement restaurant (administrateur uniquement)
 Route::middleware(['auth:sanctum', 'admin.only'])->post('/subscriptions/{plan}/pay', [PaymentController::class, 'initSubscriptionPayment']);
 
-Route::middleware('auth:sanctum')->post('/device-tokens', function (Request $request) {
-    $request->validate(['token' => 'required|string']);
-    $actor = $request->user();
-
-    // Important : un token ne peut appartenir qu'à un seul compte à la fois
-    // (Client, Restaurant ou User). S'il existait déjà rattaché à un autre
-    // compte (device revendu/partagé), on le détache.
-    DeviceToken::where('token', $request->token)
-        ->where(function ($query) use ($actor) {
-            $query->where('tokenable_type', '!=', $actor::class)
-                ->orWhere('tokenable_id', '!=', $actor->getKey());
-        })
-        ->delete();
-
-    $actor->deviceTokens()->updateOrCreate(
-        ['token' => $request->token],
-        ['platform' => $request->platform, 'last_used_at' => now()]
-    );
-
-    return response()->noContent();
-});
+Route::middleware('auth:sanctum')->post('/device-tokens', [DeviceTokenController::class, 'store']);
 
 Route::middleware(['auth:sanctum', 'client.only'])->prefix('notifications')->group(function () {
     Route::get('/', [NotificationController::class, 'index']);
