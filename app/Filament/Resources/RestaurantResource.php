@@ -140,6 +140,26 @@ class RestaurantResource extends Resource
                                             ->dehydrated(fn ($state) => filled($state))
                                             ->required(fn (string $context): bool => $context === 'create')
                                             ->helperText('Laissez vide pour conserver l\'actuel en modification'),
+
+                                        Forms\Components\Placeholder::make('auth_security_status')
+                                            ->label('Statut des tentatives de connexion (Rate Limiting)')
+                                            ->content(function (?Restaurant $record): string {
+                                                if (! $record || ! $record->email) {
+                                                    return '—';
+                                                }
+                                                $attempts = \App\Services\Auth\LoginThrottleService::attempts('restaurant', $record->email);
+                                                $isLocked = \App\Services\Auth\LoginThrottleService::isLocked('restaurant', $record->email);
+                                                $seconds = \App\Services\Auth\LoginThrottleService::availableIn('restaurant', $record->email);
+
+                                                if ($isLocked) {
+                                                    return "⚠️ BLOQUÉ : {$attempts} tentative(s) échouée(s) — Déblocage automatique dans {$seconds}s.";
+                                                }
+                                                if ($attempts > 0) {
+                                                    return "⚠️ {$attempts} tentative(s) échouée(s) enregistrée(s). Compte actif.";
+                                                }
+                                                return "✓ Normal : 0 tentative échouée, accès totalement libre.";
+                                            })
+                                            ->columnSpanFull(),
                                     ]),
                             ]),
 
@@ -247,6 +267,29 @@ class RestaurantResource extends Resource
                     ->searchable()
                     ->toggleable(isToggledHiddenByDefault: true),
 
+                Tables\Columns\IconColumn::make('auth_status')
+                    ->label('Accès')
+                    ->getStateUsing(fn (Restaurant $record): bool => ! \App\Services\Auth\LoginThrottleService::isLocked('restaurant', $record->email))
+                    ->boolean()
+                    ->trueIcon('heroicon-o-lock-open')
+                    ->falseIcon('heroicon-s-lock-closed')
+                    ->trueColor('gray')
+                    ->falseColor('danger')
+                    ->tooltip(function (Restaurant $record): string {
+                        $attempts = \App\Services\Auth\LoginThrottleService::attempts('restaurant', $record->email);
+                        $isLocked = \App\Services\Auth\LoginThrottleService::isLocked('restaurant', $record->email);
+                        $seconds = \App\Services\Auth\LoginThrottleService::availableIn('restaurant', $record->email);
+
+                        if ($isLocked) {
+                            return "Compte bloqué ({$attempts} tentatives) — Déblocage auto dans {$seconds}s";
+                        }
+                        if ($attempts > 0) {
+                            return "{$attempts} tentative(s) échouée(s) enregistrée(s)";
+                        }
+                        return 'Accès normal (aucun verrou)';
+                    })
+                    ->toggleable(),
+
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Inscrit le')
                     ->dateTime('d/m/Y')
@@ -280,6 +323,46 @@ class RestaurantResource extends Resource
                     ->label('Quota')
                     ->icon('heroicon-o-chart-pie')
                     ->color('info'),
+
+                Tables\Actions\Action::make('unlockLogin')
+                    ->label('Débloquer Connexion')
+                    ->icon('heroicon-o-lock-open')
+                    ->color(fn (Restaurant $record): string => \App\Services\Auth\LoginThrottleService::isLocked('restaurant', $record->email) ? 'danger' : 'success')
+                    ->visible(fn (): bool => (bool) auth()->user()?->isSuperAdmin())
+                    ->requiresConfirmation()
+                    ->modalHeading(fn (Restaurant $record): string => "Débloquer la connexion : {$record->name}")
+                    ->modalDescription(function (Restaurant $record): string {
+                        $attempts = \App\Services\Auth\LoginThrottleService::attempts('restaurant', $record->email);
+                        $isLocked = \App\Services\Auth\LoginThrottleService::isLocked('restaurant', $record->email);
+                        $seconds = \App\Services\Auth\LoginThrottleService::availableIn('restaurant', $record->email);
+
+                        if ($isLocked) {
+                            return "Ce compte marchand a atteint {$attempts} tentatives de connexion infructueuses et est bloqué pour encore {$seconds} secondes. Voulez-vous réinitialiser le verrou et débloquer l'accès immédiatement ?";
+                        }
+                        if ($attempts > 0) {
+                            return "Ce compte compte actuellement {$attempts} tentative(s) échouée(s). Voulez-vous réinitialiser le compteur à zéro ?";
+                        }
+                        return "Ce compte n'est pas bloqué (0 tentative échouée enregistrée). Souhaitez-vous forcer la réinitialisation des verrous de connexion ?";
+                    })
+                    ->modalSubmitActionLabel('Débloquer le compte')
+                    ->action(function (Restaurant $record): void {
+                        \App\Services\Auth\LoginThrottleService::unlock('restaurant', (string) $record->email);
+
+                        \Illuminate\Support\Facades\Log::info('RESTAURANT_LOGIN_UNLOCKED_BY_ADMIN', [
+                            'admin_id' => auth()->id(),
+                            'admin_email' => auth()->user()?->email,
+                            'restaurant_id' => $record->id,
+                            'restaurant_email' => $record->email,
+                            'restaurant_name' => $record->name,
+                            'timestamp' => now()->toIso8601String(),
+                        ]);
+
+                        \Filament\Notifications\Notification::make()
+                            ->success()
+                            ->title('Connexion marchand débloquée')
+                            ->body("Les tentatives de connexion pour « {$record->name} » ({$record->email}) ont été réinitialisées avec succès.")
+                            ->send();
+                    }),
 
                 Tables\Actions\Action::make('suspendFcm')
                     ->label('Suspendre FCM')
@@ -382,7 +465,30 @@ class RestaurantResource extends Resource
                 Tables\Actions\EditAction::make(),
             ])
             ->bulkActions([
-                // Aucune suppression en masse pour protéger l'intégrité des données des établissements
+                Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\BulkAction::make('unlockLoginBulk')
+                        ->label('Débloquer la connexion')
+                        ->icon('heroicon-o-lock-open')
+                        ->color('success')
+                        ->requiresConfirmation()
+                        ->modalHeading('Débloquer la connexion des établissements sélectionnés')
+                        ->modalDescription('Toutes les restrictions de tentatives de connexion (rate limiter) seront réinitialisées pour les comptes sélectionnés.')
+                        ->action(function (\Illuminate\Database\Eloquent\Collection $records): void {
+                            $count = 0;
+                            foreach ($records as $record) {
+                                if ($record->email) {
+                                    \App\Services\Auth\LoginThrottleService::unlock('restaurant', $record->email);
+                                    $count++;
+                                }
+                            }
+
+                            \Filament\Notifications\Notification::make()
+                                ->success()
+                                ->title('Comptes marchands débloqués')
+                                ->body("{$count} établissement(s) ont été débloqués avec succès.")
+                                ->send();
+                        }),
+                ]),
             ])
             ->emptyStateHeading('Aucun établissement trouvé')
             ->emptyStateDescription('Les établissements partenaires s\'afficheront ici.')

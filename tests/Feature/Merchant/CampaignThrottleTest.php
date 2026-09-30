@@ -49,7 +49,7 @@ class CampaignThrottleTest extends TestCase
             $client = Client::create([
                 'uuid' => (string) Str::uuid(),
                 'first_name' => 'Client'.$i,
-                'phone' => '+22890'.random_int(100000, 999999),
+                'phone' => sprintf('+22890%06d', ($restaurant->id * 1000) + $i),
                 'password' => bcrypt('secret123'),
             ]);
             LoyaltyCard::create([

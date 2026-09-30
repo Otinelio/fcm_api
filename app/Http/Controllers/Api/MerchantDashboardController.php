@@ -498,7 +498,7 @@ class MerchantDashboardController extends Controller
         if ($idempotencyKey) {
             $existing = DB::table('loyalty_transactions')
                 ->where('loyalty_card_id', $loyaltyCard->id)
-                ->where('meta', 'like', '%"idempotency_key":"' . $idempotencyKey . '"%')
+                ->where('meta->idempotency_key', (string) $idempotencyKey)
                 ->first();
             if ($existing) {
                 return response()->json([
@@ -1043,7 +1043,7 @@ class MerchantDashboardController extends Controller
         if ($idempotencyKey) {
             $existing = DB::table('loyalty_transactions')
                 ->where('loyalty_card_id', $loyaltyCard->id)
-                ->where('meta', 'like', '%"idempotency_key":"' . $idempotencyKey . '"%')
+                ->where('meta->idempotency_key', (string) $idempotencyKey)
                 ->first();
             if ($existing) {
                 return response()->json([

@@ -1,8 +1,5 @@
 <?php
 
-use App\Events\TestEvent;
-use App\Http\Controllers\DebugQrController;
-use App\Models\User;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -11,18 +8,7 @@ Route::get('/', function () {
 
 Route::redirect('/login', '/admin/login')->name('login');
 
-Route::get('/test', function () {
-    TestEvent::dispatch();
 
-    return 'Événement envoyé !';
-});
-
-// Route héritée /admin supprimée au profit du panneau Filament v3 SuperAdmin (/admin)
-Route::get('/legacy-admin', function () {
-    $users = User::all();
-
-    return view('admin', compact('users'));
-});
 
 // QR codes marchands à scanner pour tester le flux "rejoindre" — jamais
 // exposé hors local (les qr_token permettent de rejoindre n'importe quel

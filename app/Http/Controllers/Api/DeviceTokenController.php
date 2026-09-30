@@ -11,7 +11,10 @@ class DeviceTokenController extends Controller
 {
     public function store(Request $request): Response
     {
-        $request->validate(['token' => 'required|string']);
+        $validated = $request->validate([
+            'token' => 'required|string|max:500',
+            'platform' => 'nullable|string|in:android,ios,web',
+        ]);
         $actor = $request->user();
 
         // Important : un token ne peut appartenir qu'à un seul compte à la fois
@@ -25,8 +28,8 @@ class DeviceTokenController extends Controller
             ->delete();
 
         $actor->deviceTokens()->updateOrCreate(
-            ['token' => $request->token],
-            ['platform' => $request->platform, 'last_used_at' => now()]
+            ['token' => $validated['token']],
+            ['platform' => $validated['platform'] ?? null, 'last_used_at' => now()]
         );
 
         return response()->noContent();

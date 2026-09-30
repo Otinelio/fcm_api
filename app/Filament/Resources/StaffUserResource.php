@@ -129,6 +129,29 @@ class StaffUserResource extends Resource
                     ->alignCenter()
                     ->sortable(),
 
+                Tables\Columns\IconColumn::make('auth_status')
+                    ->label('Accès')
+                    ->getStateUsing(fn (StaffUser $record): bool => ! \App\Services\Auth\LoginThrottleService::isLocked('staff', $record->email))
+                    ->boolean()
+                    ->trueIcon('heroicon-o-lock-open')
+                    ->falseIcon('heroicon-s-lock-closed')
+                    ->trueColor('gray')
+                    ->falseColor('danger')
+                    ->tooltip(function (StaffUser $record): string {
+                        $attempts = \App\Services\Auth\LoginThrottleService::attempts('staff', $record->email);
+                        $isLocked = \App\Services\Auth\LoginThrottleService::isLocked('staff', $record->email);
+                        $seconds = \App\Services\Auth\LoginThrottleService::availableIn('staff', $record->email);
+
+                        if ($isLocked) {
+                            return "Compte bloqué ({$attempts} tentatives) — Déblocage auto dans {$seconds}s";
+                        }
+                        if ($attempts > 0) {
+                            return "{$attempts} tentative(s) échouée(s) enregistrée(s)";
+                        }
+                        return 'Accès normal (aucun verrou)';
+                    })
+                    ->toggleable(),
+
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Ajouté le')
                     ->dateTime('d/m/Y')
@@ -159,10 +182,64 @@ class StaffUserResource extends Resource
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
+
+                Tables\Actions\Action::make('unlockLogin')
+                    ->label('Débloquer Connexion')
+                    ->icon('heroicon-o-lock-open')
+                    ->color(fn (StaffUser $record): string => \App\Services\Auth\LoginThrottleService::isLocked('staff', $record->email) ? 'danger' : 'success')
+                    ->visible(fn (): bool => (bool) auth()->user()?->isSuperAdmin())
+                    ->requiresConfirmation()
+                    ->modalHeading(fn (StaffUser $record): string => "Débloquer la connexion : {$record->name}")
+                    ->modalDescription(function (StaffUser $record): string {
+                        $attempts = \App\Services\Auth\LoginThrottleService::attempts('staff', $record->email);
+                        $isLocked = \App\Services\Auth\LoginThrottleService::isLocked('staff', $record->email);
+                        $seconds = \App\Services\Auth\LoginThrottleService::availableIn('staff', $record->email);
+
+                        if ($isLocked) {
+                            return "Ce compte collaborateur a atteint {$attempts} tentatives de connexion infructueuses et est bloqué pour encore {$seconds} secondes. Voulez-vous réinitialiser le verrou et débloquer l'accès immédiatement ?";
+                        }
+                        if ($attempts > 0) {
+                            return "Ce compte compte actuellement {$attempts} tentative(s) échouée(s). Voulez-vous réinitialiser le compteur à zéro ?";
+                        }
+                        return "Ce compte n'est pas bloqué (0 tentative échouée enregistrée). Souhaitez-vous forcer la réinitialisation des verrous de connexion ?";
+                    })
+                    ->modalSubmitActionLabel('Débloquer le compte')
+                    ->action(function (StaffUser $record): void {
+                        \App\Services\Auth\LoginThrottleService::unlock('staff', (string) $record->email);
+
+                        \Filament\Notifications\Notification::make()
+                            ->success()
+                            ->title('Connexion débloquée')
+                            ->body("Les tentatives de connexion pour « {$record->name} » ({$record->email}) ont été réinitialisées avec succès.")
+                            ->send();
+                    }),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
+
+                    Tables\Actions\BulkAction::make('unlockLoginBulk')
+                        ->label('Débloquer la connexion')
+                        ->icon('heroicon-o-lock-open')
+                        ->color('success')
+                        ->requiresConfirmation()
+                        ->modalHeading('Débloquer la connexion des collaborateurs sélectionnés')
+                        ->modalDescription('Toutes les restrictions de tentatives de connexion (rate limiter) seront réinitialisées pour les comptes sélectionnés.')
+                        ->action(function (\Illuminate\Database\Eloquent\Collection $records): void {
+                            $count = 0;
+                            foreach ($records as $record) {
+                                if ($record->email) {
+                                    \App\Services\Auth\LoginThrottleService::unlock('staff', $record->email);
+                                    $count++;
+                                }
+                            }
+
+                            \Filament\Notifications\Notification::make()
+                                ->success()
+                                ->title('Comptes collaborateurs débloqués')
+                                ->body("{$count} compte(s) collaborateur(s) ont été débloqués avec succès.")
+                                ->send();
+                        }),
                 ]),
             ])
             ->emptyStateHeading('Aucun personnel enregistré')

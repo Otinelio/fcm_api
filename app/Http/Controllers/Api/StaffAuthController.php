@@ -24,13 +24,19 @@ class StaffAuthController extends Controller
             'password' => ['required', 'string'],
         ]);
 
+        \App\Services\Auth\LoginThrottleService::ensureIsNotRateLimited('staff', (string) $request->email, $request->ip());
+
         $staffUser = StaffUser::where('email', $request->email)->first();
 
         if (! $staffUser || ! Hash::check($request->password, $staffUser->password)) {
+            \App\Services\Auth\LoginThrottleService::hit('staff', (string) $request->email, $request->ip());
+
             return response()->json([
                 'message' => 'Identifiants incorrects.',
             ], 401);
         }
+
+        \App\Services\Auth\LoginThrottleService::clear('staff', (string) $request->email, $request->ip());
 
         if (! $staffUser->is_active) {
             return response()->json([

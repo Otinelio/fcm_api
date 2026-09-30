@@ -58,6 +58,14 @@ class FedaPayWebhookController extends Controller
             return response()->json(['status' => 'already processed']);
         }
 
+        if ($localTransaction->status === 'declined' && in_array($event->name, ['transaction.canceled', 'transaction.declined'], true)) {
+            return response()->json(['status' => 'already processed']);
+        }
+
+        if ($localTransaction->status === 'refunded' && $event->name === 'transaction.refunded') {
+            return response()->json(['status' => 'already processed']);
+        }
+
         switch ($event->name) {
             case 'transaction.approved':
                 $this->activateSubscription($localTransaction, $transactionData);

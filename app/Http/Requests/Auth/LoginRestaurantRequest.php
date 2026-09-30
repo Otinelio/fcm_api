@@ -2,9 +2,8 @@
 
 namespace App\Http\Requests\Auth;
 
+use App\Services\Auth\LoginThrottleService;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class LoginRestaurantRequest extends FormRequest
@@ -32,37 +31,27 @@ class LoginRestaurantRequest extends FormRequest
     }
 
     /**
-     * Rate limiting : 5 tentatives par minute par combinaison IP + email.
+     * Rate limiting : vérifie les tentatives par compte restaurant et par IP.
      *
      * @throws ValidationException
      */
     public function ensureIsNotRateLimited(): void
     {
-        $key = $this->throttleKey();
-
-        if (! RateLimiter::tooManyAttempts($key, 5)) {
-            return;
-        }
-
-        $seconds = RateLimiter::availableIn($key);
-
-        throw ValidationException::withMessages([
-            'email' => ["Trop de tentatives. Réessayez dans {$seconds} secondes."],
-        ])->status(429);
+        LoginThrottleService::ensureIsNotRateLimited('restaurant', (string) $this->input('email'), $this->ip());
     }
 
     public function hitRateLimiter(): void
     {
-        RateLimiter::hit($this->throttleKey(), 60);
+        LoginThrottleService::hit('restaurant', (string) $this->input('email'), $this->ip());
     }
 
     public function clearRateLimiter(): void
     {
-        RateLimiter::clear($this->throttleKey());
+        LoginThrottleService::clear('restaurant', (string) $this->input('email'), $this->ip());
     }
 
-    private function throttleKey(): string
+    public function throttleKey(): string
     {
-        return Str::lower($this->input('email')).'|'.$this->ip();
+        return LoginThrottleService::accountKey('restaurant', (string) $this->input('email'));
     }
 }

@@ -21,13 +21,7 @@ use App\Http\Controllers\Api\TeamController;
 use App\Http\Controllers\FedaPayWebhookController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\SocialRedirectController;
-use App\Jobs\SendPromoNotification;
 use App\Models\Client;
-use App\Models\DeviceToken;
-use App\Models\User;
-use App\Services\Fcm\FcmService;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Route;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -38,7 +32,7 @@ Route::prefix('auth')->group(function () {
     // Routes publiques (pas de token nécessaire)
     Route::post('/validate-register-step1', [ClientAuthController::class, 'validateRegisterStep1'])->middleware('throttle:5,1');
     Route::post('/register', [ClientAuthController::class, 'register'])->middleware('throttle:5,1');
-    Route::post('/login', [ClientAuthController::class, 'login'])->middleware('throttle:5,1');
+    Route::post('/login', [ClientAuthController::class, 'login'])->middleware('throttle:60,1');
     Route::post('/social', [ClientAuthController::class, 'socialLogin']);
 
     // Password Recovery
@@ -66,9 +60,9 @@ Route::prefix('auth')->group(function () {
 Route::prefix('auth/merchant')->group(function () {
     // Routes publiques
     Route::post('/register', [RestaurantAuthController::class, 'register'])->middleware('throttle:5,1');
-    Route::post('/login', [RestaurantAuthController::class, 'login'])->middleware('throttle:5,1');
+    Route::post('/login', [RestaurantAuthController::class, 'login'])->middleware('throttle:60,1');
     Route::post('/social', [RestaurantAuthController::class, 'socialLogin']);
-    Route::post('/staff/login', [StaffAuthController::class, 'login'])->middleware('throttle:5,1');
+    Route::post('/staff/login', [StaffAuthController::class, 'login'])->middleware('throttle:60,1');
 
     // Password Recovery
     Route::post('/forgot-password', [RestaurantAuthController::class, 'forgotPassword'])->middleware('throttle:5,1');
@@ -142,7 +136,7 @@ Route::middleware(['auth:sanctum', 'staff.active'])->prefix('merchant')->group(f
 
 Route::middleware(['auth:sanctum', 'client.only'])->prefix('loyalty-cards')->group(function () {
     Route::get('/', [LoyaltyCardController::class, 'index']);
-    Route::post('/join', [LoyaltyCardController::class, 'join']);
+    Route::post('/join', [LoyaltyCardController::class, 'join'])->middleware('throttle:30,1');
     Route::get('/{loyaltyCard}', [LoyaltyCardController::class, 'show']);
     Route::get('/{loyaltyCard}/history', [LoyaltyCardController::class, 'history']);
 });
@@ -151,7 +145,7 @@ Route::middleware(['auth:sanctum', 'client.only'])->get('/rewards', [LoyaltyRewa
 
 Route::middleware(['auth:sanctum', 'client.only'])->get('/referrals', [ReferralController::class, 'mine']);
 
-Route::middleware(['auth:sanctum', 'client.only'])->post('/reviews', [ReviewController::class, 'store']);
+Route::middleware(['auth:sanctum', 'client.only'])->post('/reviews', [ReviewController::class, 'store'])->middleware('throttle:10,1');
 
 Route::middleware(['auth:sanctum', 'client.only'])->post('/client/location/proximity-check', [ClientProximityController::class, 'check'])->middleware('throttle:60,1');
 
@@ -163,7 +157,7 @@ Route::get('/client/advertisements', [ClientAdvertisementController::class, 'ind
 // Autres routes existantes
 // ─────────────────────────────────────────────────────────────────────────────
 
-Route::middleware('auth:sanctum')->post(
+Route::middleware(['auth:sanctum', 'client.only'])->post(
     '/rewards/{reward}/ack',
     RewardAckController::class
 );
@@ -175,7 +169,7 @@ Route::post('/webhooks/fedapay', [FedaPayWebhookController::class, 'handle']);
 // Paiement d'abonnement restaurant (administrateur uniquement)
 Route::middleware(['auth:sanctum', 'admin.only'])->post('/subscriptions/{plan}/pay', [PaymentController::class, 'initSubscriptionPayment']);
 
-Route::middleware('auth:sanctum')->post('/device-tokens', [DeviceTokenController::class, 'store']);
+Route::middleware('auth:sanctum')->post('/device-tokens', [DeviceTokenController::class, 'store'])->middleware('throttle:30,1');
 
 Route::middleware(['auth:sanctum', 'client.only'])->prefix('notifications')->group(function () {
     Route::get('/', [NotificationController::class, 'index']);

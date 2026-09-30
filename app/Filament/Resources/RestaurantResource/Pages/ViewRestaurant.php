@@ -21,6 +21,48 @@ class ViewRestaurant extends ViewRecord
             Actions\EditAction::make()
                 ->icon('heroicon-o-pencil-square'),
 
+            Actions\Action::make('unlockLogin')
+                ->label('Débloquer Connexion')
+                ->icon('heroicon-o-lock-open')
+                ->color(fn (): string => \App\Services\Auth\LoginThrottleService::isLocked('restaurant', $this->getRecord()->email) ? 'danger' : 'success')
+                ->visible(fn (): bool => (bool) auth()->user()?->isSuperAdmin())
+                ->requiresConfirmation()
+                ->modalHeading(fn (): string => "Débloquer la connexion : {$this->getRecord()->name}")
+                ->modalDescription(function (): string {
+                    $email = $this->getRecord()->email;
+                    $attempts = \App\Services\Auth\LoginThrottleService::attempts('restaurant', $email);
+                    $isLocked = \App\Services\Auth\LoginThrottleService::isLocked('restaurant', $email);
+                    $seconds = \App\Services\Auth\LoginThrottleService::availableIn('restaurant', $email);
+
+                    if ($isLocked) {
+                        return "Ce compte marchand a atteint {$attempts} tentatives de connexion infructueuses et est bloqué pour encore {$seconds} secondes. Voulez-vous réinitialiser le verrou et débloquer l'accès immédiatement ?";
+                    }
+                    if ($attempts > 0) {
+                        return "Ce compte compte actuellement {$attempts} tentative(s) échouée(s). Voulez-vous réinitialiser le compteur à zéro ?";
+                    }
+                    return "Ce compte n'est pas bloqué (0 tentative échouée enregistrée). Souhaitez-vous forcer la réinitialisation des verrous de connexion ?";
+                })
+                ->modalSubmitActionLabel('Débloquer le compte')
+                ->action(function (): void {
+                    $restaurant = $this->getRecord();
+                    \App\Services\Auth\LoginThrottleService::unlock('restaurant', (string) $restaurant->email);
+
+                    \Illuminate\Support\Facades\Log::info('RESTAURANT_LOGIN_UNLOCKED_BY_ADMIN', [
+                        'admin_id' => auth()->id(),
+                        'admin_email' => auth()->user()?->email,
+                        'restaurant_id' => $restaurant->id,
+                        'restaurant_email' => $restaurant->email,
+                        'restaurant_name' => $restaurant->name,
+                        'timestamp' => now()->toIso8601String(),
+                    ]);
+
+                    Notification::make()
+                        ->success()
+                        ->title('Connexion marchand débloquée')
+                        ->body("Les tentatives de connexion pour « {$restaurant->name} » ({$restaurant->email}) ont été réinitialisées avec succès.")
+                        ->send();
+                }),
+
             Actions\Action::make('suspendFcm')
                 ->label('Suspendre FCM')
                 ->icon('heroicon-o-no-symbol')

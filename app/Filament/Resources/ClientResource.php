@@ -108,6 +108,25 @@ class ClientResource extends Resource
                                     ->required(fn (string $context): bool => $context === 'create')
                                     ->helperText('Laissez vide pour conserver l\'actuel'),
                             ]),
+
+                        Forms\Components\Placeholder::make('auth_security_status')
+                            ->label('Statut des tentatives de connexion (Rate Limiting)')
+                            ->content(function (?Client $record): string {
+                                if (! $record || ! $record->phone) {
+                                    return '—';
+                                }
+                                $attempts = \App\Services\Auth\LoginThrottleService::attempts('client', $record->phone);
+                                $isLocked = \App\Services\Auth\LoginThrottleService::isLocked('client', $record->phone);
+                                $seconds = \App\Services\Auth\LoginThrottleService::availableIn('client', $record->phone);
+
+                                if ($isLocked) {
+                                    return "⚠️ BLOQUÉ : {$attempts} tentative(s) échouée(s) — Déblocage automatique dans {$seconds}s.";
+                                }
+                                if ($attempts > 0) {
+                                    return "⚠️ {$attempts} tentative(s) échouée(s) enregistrée(s). Compte actif.";
+                                }
+                                return "✓ Normal : 0 tentative échouée, accès totalement libre.";
+                            }),
                     ])
                     ->collapsed(),
             ]);
@@ -160,6 +179,29 @@ class ClientResource extends Resource
                     ->color(fn ($state) => $state ? 'info' : 'gray')
                     ->toggleable(),
 
+                Tables\Columns\IconColumn::make('auth_status')
+                    ->label('Accès')
+                    ->getStateUsing(fn (Client $record): bool => ! \App\Services\Auth\LoginThrottleService::isLocked('client', $record->phone))
+                    ->boolean()
+                    ->trueIcon('heroicon-o-lock-open')
+                    ->falseIcon('heroicon-s-lock-closed')
+                    ->trueColor('gray')
+                    ->falseColor('danger')
+                    ->tooltip(function (Client $record): string {
+                        $attempts = \App\Services\Auth\LoginThrottleService::attempts('client', $record->phone);
+                        $isLocked = \App\Services\Auth\LoginThrottleService::isLocked('client', $record->phone);
+                        $seconds = \App\Services\Auth\LoginThrottleService::availableIn('client', $record->phone);
+
+                        if ($isLocked) {
+                            return "Compte bloqué ({$attempts} tentatives) — Déblocage auto dans {$seconds}s";
+                        }
+                        if ($attempts > 0) {
+                            return "{$attempts} tentative(s) échouée(s) enregistrée(s)";
+                        }
+                        return 'Accès normal (aucun verrou)';
+                    })
+                    ->toggleable(),
+
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Inscrit')
                     ->since()
@@ -194,10 +236,72 @@ class ClientResource extends Resource
             ->actions([
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),
+
+                Tables\Actions\Action::make('unlockLogin')
+                    ->label('Débloquer Connexion')
+                    ->icon('heroicon-o-lock-open')
+                    ->color(fn (Client $record): string => \App\Services\Auth\LoginThrottleService::isLocked('client', $record->phone) ? 'danger' : 'success')
+                    ->visible(fn (Client $record): bool => (bool) auth()->user()?->isSuperAdmin())
+                    ->requiresConfirmation()
+                    ->modalHeading(fn (Client $record): string => "Débloquer la connexion : {$record->full_name}")
+                    ->modalDescription(function (Client $record): string {
+                        $attempts = \App\Services\Auth\LoginThrottleService::attempts('client', $record->phone);
+                        $isLocked = \App\Services\Auth\LoginThrottleService::isLocked('client', $record->phone);
+                        $seconds = \App\Services\Auth\LoginThrottleService::availableIn('client', $record->phone);
+
+                        if ($isLocked) {
+                            return "Ce compte a atteint {$attempts} tentatives de connexion infructueuses et est bloqué pour encore {$seconds} secondes. Voulez-vous réinitialiser le verrou et débloquer l'accès immédiatement ?";
+                        }
+                        if ($attempts > 0) {
+                            return "Ce compte compte actuellement {$attempts} tentative(s) échouée(s). Voulez-vous réinitialiser le compteur à zéro ?";
+                        }
+                        return "Ce compte n'est pas bloqué (0 tentative échouée enregistrée). Souhaitez-vous forcer la réinitialisation des verrous de connexion ?";
+                    })
+                    ->modalSubmitActionLabel('Débloquer le compte')
+                    ->action(function (Client $record): void {
+                        \App\Services\Auth\LoginThrottleService::unlock('client', (string) $record->phone);
+
+                        \Illuminate\Support\Facades\Log::info('CLIENT_LOGIN_UNLOCKED_BY_ADMIN', [
+                            'admin_id' => auth()->id(),
+                            'admin_email' => auth()->user()?->email,
+                            'client_id' => $record->id,
+                            'client_phone' => $record->phone,
+                            'timestamp' => now()->toIso8601String(),
+                        ]);
+
+                        \Filament\Notifications\Notification::make()
+                            ->success()
+                            ->title('Connexion débloquée')
+                            ->body("Les tentatives de connexion pour {$record->full_name} ({$record->phone}) ont été réinitialisées avec succès.")
+                            ->send();
+                    }),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
+
+                    Tables\Actions\BulkAction::make('unlockLoginBulk')
+                        ->label('Débloquer la connexion')
+                        ->icon('heroicon-o-lock-open')
+                        ->color('success')
+                        ->requiresConfirmation()
+                        ->modalHeading('Débloquer la connexion des comptes sélectionnés')
+                        ->modalDescription('Toutes les restrictions de tentatives de connexion (rate limiter) seront réinitialisées pour les comptes sélectionnés.')
+                        ->action(function (\Illuminate\Database\Eloquent\Collection $records): void {
+                            $count = 0;
+                            foreach ($records as $record) {
+                                if ($record->phone) {
+                                    \App\Services\Auth\LoginThrottleService::unlock('client', $record->phone);
+                                    $count++;
+                                }
+                            }
+
+                            \Filament\Notifications\Notification::make()
+                                ->success()
+                                ->title('Comptes débloqués')
+                                ->body("{$count} compte(s) client(s) ont été débloqués avec succès.")
+                                ->send();
+                        }),
                 ]),
             ])
             ->emptyStateHeading('Aucun client enregistré')

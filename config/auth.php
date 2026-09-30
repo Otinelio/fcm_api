@@ -137,4 +137,20 @@ return [
 
     'password_timeout' => env('AUTH_PASSWORD_TIMEOUT', 10800),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Login Rate Limiting & Throttling
+    |--------------------------------------------------------------------------
+    |
+    | Contrôle le nombre maximal de tentatives de connexion échouées autorisées
+    | avant verrouillage temporaire, ainsi que la durée d'expiration du verrou.
+    |
+    */
+
+    'throttle' => [
+        'max_attempts' => (int) env('AUTH_MAX_LOGIN_ATTEMPTS', 5),
+        'decay_seconds' => (int) env('AUTH_LOGIN_DECAY_SECONDS', 60),
+    ],
+
 ];
+

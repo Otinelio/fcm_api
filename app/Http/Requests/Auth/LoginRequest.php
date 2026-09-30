@@ -2,10 +2,9 @@
 
 namespace App\Http\Requests\Auth;
 
+use App\Services\Auth\LoginThrottleService;
 use App\Services\Phone\PhoneParser;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class LoginRequest extends FormRequest
@@ -44,25 +43,13 @@ class LoginRequest extends FormRequest
     }
 
     /**
-     * Rate limiting : 5 tentatives par minute par combinaison IP + phone.
+     * Rate limiting : vérifie les tentatives par compte client et par IP.
      *
      * @throws ValidationException
      */
     public function ensureIsNotRateLimited(): void
     {
-        $key = $this->throttleKey();
-
-        if (! RateLimiter::tooManyAttempts($key, 5)) {
-            return;
-        }
-
-        $seconds = RateLimiter::availableIn($key);
-
-        throw ValidationException::withMessages([
-            'phone' => [
-                "Trop de tentatives. Réessayez dans {$seconds} secondes.",
-            ],
-        ])->status(429);
+        LoginThrottleService::ensureIsNotRateLimited('client', (string) $this->input('phone'), $this->ip());
     }
 
     /**
@@ -70,7 +57,7 @@ class LoginRequest extends FormRequest
      */
     public function hitRateLimiter(): void
     {
-        RateLimiter::hit($this->throttleKey(), 60);
+        LoginThrottleService::hit('client', (string) $this->input('phone'), $this->ip());
     }
 
     /**
@@ -78,14 +65,14 @@ class LoginRequest extends FormRequest
      */
     public function clearRateLimiter(): void
     {
-        RateLimiter::clear($this->throttleKey());
+        LoginThrottleService::clear('client', (string) $this->input('phone'), $this->ip());
     }
 
     /**
-     * Clé unique pour le rate limiter.
+     * Clé unique pour le rate limiter (rétrocompatibilité).
      */
-    private function throttleKey(): string
+    public function throttleKey(): string
     {
-        return Str::lower($this->input('phone')).'|'.$this->ip();
+        return LoginThrottleService::accountKey('client', (string) $this->input('phone'));
     }
 }
